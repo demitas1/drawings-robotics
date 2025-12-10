@@ -1,0 +1,25 @@
+groups:
+  - name: "s-rect"
+    shape: rect
+    grid:
+      x: 1.27
+      y: 1.27
+    size:
+      width: 1.27
+      height: 1.27
+
+  - name: "s-circle"
+    shape: arc
+    grid:
+      x: 1.27
+      y: 1.27
+    size:
+      width: 0.635
+      height: 0.635
+    arc:
+      start: 0
+      end: 6.283185307179586
+
+tolerance:
+  acceptable: 0.001
+  error_threshold: 0.1

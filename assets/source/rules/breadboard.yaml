@@ -1,0 +1,28 @@
+# Breadboard SVG validation rules
+# Target: svg-test1-breadboard1.svg
+
+groups:
+  - name: "s-rect"
+    shape: rect
+    grid:
+      x: 1.27
+      y: 1.27
+    size:
+      width: 1.27
+      height: 1.27
+
+  - name: "s-circle"
+    shape: arc
+    grid:
+      x: 1.27
+      y: 1.27
+    size:
+      width: 0.635
+      height: 0.635
+    arc:
+      start: 0
+      end: 6.2831853  # 2 * pi
+
+tolerance:
+  acceptable: 0.001      # 0.001mm or 0.001rad
+  error_threshold: 0.1   # 10%
