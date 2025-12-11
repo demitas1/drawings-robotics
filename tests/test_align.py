@@ -8,7 +8,7 @@ from xml.etree import ElementTree as ET
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from svg_tools.utils import SVG_NAMESPACES
+from svg_tools.utils import SVG_NAMESPACES, find_group_by_label
 from svg_tools.geometry import RectInfo, ArcInfo
 from svg_tools.align import (
     GridRule,
@@ -22,7 +22,6 @@ from svg_tools.align import (
     GroupValidationResult,
     AlignmentReport,
     parse_rule_file,
-    find_group_by_label,
     iter_shapes_in_group,
     validate_rect,
     validate_arc,

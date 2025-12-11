@@ -281,3 +281,46 @@ def iter_all_groups(stats: SVGStats) -> Iterator[GroupStats]:
 
     for root_group in stats.root_groups:
         yield from _iter_group(root_group)
+
+
+def find_group_by_label(root: ET.Element, label: str) -> ET.Element | None:
+    """Find a group element by inkscape:label.
+
+    Args:
+        root: Root SVG element.
+        label: inkscape:label value to search for.
+
+    Returns:
+        Group element or None if not found.
+    """
+    inkscape_ns = SVG_NAMESPACES["inkscape"]
+    for elem in root.iter():
+        if get_local_name(elem.tag) == "g":
+            elem_label = elem.get(f"{{{inkscape_ns}}}label")
+            if elem_label == label:
+                return elem
+    return None
+
+
+def get_element_label(element: ET.Element) -> str | None:
+    """Get the inkscape:label of an element.
+
+    Args:
+        element: An XML element.
+
+    Returns:
+        The label value or None if not set.
+    """
+    inkscape_ns = SVG_NAMESPACES["inkscape"]
+    return element.get(f"{{{inkscape_ns}}}label")
+
+
+def set_element_label(element: ET.Element, label: str) -> None:
+    """Set the inkscape:label of an element.
+
+    Args:
+        element: An XML element.
+        label: The label value to set.
+    """
+    inkscape_ns = SVG_NAMESPACES["inkscape"]
+    element.set(f"{{{inkscape_ns}}}label", label)

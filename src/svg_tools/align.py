@@ -21,7 +21,7 @@ from .geometry import (
     update_arc,
     update_rect,
 )
-from .utils import SVG_NAMESPACES, get_local_name, register_namespaces
+from .utils import find_group_by_label, register_namespaces
 
 # Default values
 DEFAULT_TOLERANCE = 0.001  # mm or rad
@@ -244,25 +244,6 @@ def parse_rule_file(rule_path: Path) -> AlignmentRule:
         )
 
     return AlignmentRule(groups=groups, tolerance=tolerance)
-
-
-def find_group_by_label(root: ET.Element, label: str) -> ET.Element | None:
-    """Find a group element by inkscape:label.
-
-    Args:
-        root: Root SVG element.
-        label: inkscape:label value to search for.
-
-    Returns:
-        Group element or None if not found.
-    """
-    inkscape_ns = SVG_NAMESPACES["inkscape"]
-    for elem in root.iter():
-        if get_local_name(elem.tag) == "g":
-            elem_label = elem.get(f"{{{inkscape_ns}}}label")
-            if elem_label == label:
-                return elem
-    return None
 
 
 def iter_shapes_in_group(

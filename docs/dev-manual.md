@@ -204,6 +204,130 @@ Output written to: assets/normalized/svg-test1-breadboard1.svg
 | 1 | ファイル読み込みエラーなど |
 | 2 | バリデーションエラー（10%超の誤差あり） |
 
+### scripts/svg_relabel.py
+
+SVGファイル内の形状要素（rect, arc）のラベル（`inkscape:label`属性）を、座標に基づいた規則的な命名に付け替えるツールです。
+
+#### 機能
+
+- グループ内の形状要素に座標ベースのラベルを付与
+- 柔軟なテンプレートとフォーマット指定
+- 数値・アルファベット（大文字/小文字）のインデックス形式
+- 軸方向・原点・開始インデックスのカスタマイズ
+- 重複ラベル検出によるエラー防止
+
+#### 使用方法
+
+```bash
+# プレビュー（変更内容の確認のみ）
+./venv/bin/python scripts/svg_relabel.py <SVGファイル> --rule <ルールYAML>
+
+# ドライラン（--output指定でも変更を適用しない）
+./venv/bin/python scripts/svg_relabel.py <SVGファイル> --rule <ルールYAML> --output <出力SVG> --dry-run
+
+# ラベル付け替えを実行
+./venv/bin/python scripts/svg_relabel.py <SVGファイル> --rule <ルールYAML> --output <出力SVG>
+```
+
+#### 使用例
+
+```bash
+# breadboard SVGのラベルをプレビュー
+./venv/bin/python scripts/svg_relabel.py assets/source/svg-test1-breadboard1.svg \
+  --rule assets/source/rules/breadboard-relabel.yaml
+
+# ラベルを付け替えて出力
+./venv/bin/python scripts/svg_relabel.py assets/source/svg-test1-breadboard1.svg \
+  --rule assets/source/rules/breadboard-relabel.yaml \
+  --output assets/normalized/relabeled-breadboard.svg
+```
+
+#### オプション
+
+| オプション | 説明 |
+|-----------|------|
+| `--rule, -r` | ルールYAMLファイルのパス（必須） |
+| `--output, -o` | 出力SVGファイルのパス（指定時にラベル付け替えを実行） |
+| `--dry-run` | 変更を適用せずプレビューのみ表示 |
+
+#### ルールYAMLの形式
+
+```yaml
+groups:
+  - name: "s-circle"           # inkscape:label で指定されたグループ名
+    shape: arc                 # 形状タイプ（rect または arc）
+    label_template: "hole-{x}-{y}"  # ラベルテンプレート
+    grid:
+      x: 2.54                  # X方向グリッド単位（mm）
+      y: 2.54                  # Y方向グリッド単位（mm）
+    origin:                    # 原点位置（省略時は自動計算）
+      x: 10.16
+      y: 10.16
+    axis:
+      x_direction: positive    # positive（右が+）| negative（左が+）
+      y_direction: positive    # positive（下が+）| negative（上が+）
+    index:
+      x_start: 1               # X方向開始インデックス
+      y_start: 1               # Y方向開始インデックス
+    format:
+      x_type: number           # number | letter | letter_upper
+      y_type: letter           # number | letter | letter_upper
+      x_padding: 0             # 数値のゼロ埋め桁数
+      y_padding: 0
+```
+
+#### テンプレートのプレースホルダー
+
+| プレースホルダー | 説明 | 例 |
+|-----------------|------|-----|
+| `{x}` | X方向インデックス（フォーマット適用済み） | `1`, `01`, `a`, `A` |
+| `{y}` | Y方向インデックス（フォーマット適用済み） | `1`, `01`, `a`, `A` |
+| `{x_raw}` | X方向インデックス（数値） | `1`, `2`, `3` |
+| `{y_raw}` | Y方向インデックス（数値） | `1`, `2`, `3` |
+| `{cx}` | 要素中心X座標（mm） | `12.70` |
+| `{cy}` | 要素中心Y座標（mm） | `25.40` |
+
+#### フォーマット型
+
+| 型 | 説明 | 出力例 |
+|----|------|--------|
+| `number` | 数値 | `1`, `2`, `3`, ... `26`, `27`, ... |
+| `letter` | 小文字アルファベット | `a`, `b`, `c`, ... `z`, `aa`, `ab`, ... |
+| `letter_upper` | 大文字アルファベット | `A`, `B`, `C`, ... `Z`, `AA`, `AB`, ... |
+
+#### 出力例
+
+```
+File: assets/source/svg-test1-breadboard1.svg
+
+Group: s-circle (arc)
+  Total elements: 408
+  Origin: (5.08, 5.08)
+  Grid: (2.54, 2.54)
+
+  Label changes:
+    path27-9: "(none)" -> "hole-30-a"
+    path27-9-8: "(none)" -> "hole-29-a"
+    path27: "(none)" -> "hole-2-a"
+    ...
+
+  Unchanged: 0
+  Changed: 408
+
+Summary:
+  Total elements: 816
+  Total changed: 816
+```
+
+#### 終了コード
+
+| コード | 意味 |
+|--------|------|
+| 0 | 成功 |
+| 1 | ファイル読み込み/書き込みエラー |
+| 2 | ルールファイルエラー |
+| 3 | 重複ラベル検出などのエラー |
+
 ## テスト
 
 ### テストの実行
@@ -237,17 +361,26 @@ src/svg_tools/
 ├── __init__.py      # パッケージ初期化
 ├── utils.py         # ユーティリティ関数・クラス
 ├── geometry.py      # 形状解析・修正ユーティリティ
-└── align.py         # バリデーション・アライメントロジック
+├── align.py         # バリデーション・アライメントロジック
+└── relabel.py       # ラベル付け替えロジック
 
 scripts/
 ├── stats.py         # SVG統計ツール（CLI）
-└── svg_align.py     # SVG形状検査・修正ツール（CLI）
+├── svg_align.py     # SVG形状検査・修正ツール（CLI）
+└── svg_relabel.py   # SVGラベル付け替えツール（CLI）
 
 tests/
 ├── __init__.py
 ├── test_utils.py    # utils.py のテスト
+├── test_geometry.py # geometry.py のテスト
+├── test_align.py    # align.py のテスト
+├── test_relabel.py  # relabel.py のテスト
 └── fixtures/        # テスト用データ
     └── breadboard-rule.yaml
+
+assets/source/rules/
+├── breadboard.yaml         # アライメント用ルール
+└── breadboard-relabel.yaml # ラベル付け替え用ルール
 ```
 
 ### utils.py の主要関数
@@ -260,6 +393,9 @@ tests/
 | `is_drawing_element(element)` | 描画要素かどうかを判定 |
 | `analyze_svg(file_path)` | SVGを解析して統計を収集 |
 | `iter_all_groups(stats)` | 全グループを深さ優先で走査 |
+| `find_group_by_label(root, label)` | inkscape:labelでグループを検索 |
+| `get_element_label(element)` | 要素のinkscape:labelを取得 |
+| `set_element_label(element, label)` | 要素のinkscape:labelを設定 |
 | `GroupStats` | グループの統計データクラス |
 | `SVGStats` | SVG全体の統計データクラス |
 
@@ -289,3 +425,20 @@ tests/
 | `AlignmentReport` | 検査結果レポートのデータクラス |
 | `GroupRule` | グループごとのルールデータクラス |
 | `ValidationResult` | 要素ごとの検査結果データクラス |
+
+### relabel.py の主要関数
+
+| 関数/クラス | 説明 |
+|------------|------|
+| `parse_relabel_rule_file(rule_path)` | YAMLルールファイルをパース |
+| `relabel_svg(svg_path, rule, apply)` | SVGファイルのラベルを付け替え |
+| `relabel_group(root, rule, apply)` | グループ内の形状をリラベル |
+| `format_relabel_report(report)` | リラベル結果をテキストにフォーマット |
+| `to_letter(n, upper)` | 数値をアルファベットに変換（1=a, 27=aa） |
+| `format_index(index, format_type, padding)` | インデックスをフォーマット |
+| `calculate_grid_index(center, origin, grid, axis, index)` | 座標からグリッドインデックスを計算 |
+| `generate_label(template, ...)` | テンプレートからラベルを生成 |
+| `RelabelRule` | リラベルルールのデータクラス |
+| `RelabelGroupRule` | グループごとのリラベルルールデータクラス |
+| `RelabelReport` | リラベル結果レポートのデータクラス |
+| `LabelChange` | ラベル変更情報のデータクラス |

@@ -1,0 +1,40 @@
+# Breadboard SVG relabeling rules
+# Target: svg-test1-breadboard1.svg
+
+groups:
+  # Relabel small circles (holes) with coordinate-based names
+  - name: "s-circle"
+    shape: arc
+    label_template: "hole-{x}-{y}"
+    grid:
+      x: 2.54    # Standard 0.1" pitch
+      y: 2.54
+    # origin: auto-detected from minimum coordinates
+    axis:
+      x_direction: positive   # X increases to the right
+      y_direction: positive   # Y increases downward
+    index:
+      x_start: 1
+      y_start: 1
+    format:
+      x_type: number          # 1, 2, 3, ...
+      y_type: letter          # a, b, c, ...
+      x_padding: 0
+
+  # Relabel small rectangles (pads) with coordinate-based names
+  - name: "s-rect"
+    shape: rect
+    label_template: "pad-{x}{y}"
+    grid:
+      x: 1.27    # Half pitch
+      y: 1.27
+    axis:
+      x_direction: positive
+      y_direction: positive
+    index:
+      x_start: 1
+      y_start: 1
+    format:
+      x_type: letter_upper    # A, B, C, ...
+      y_type: number          # 1, 2, 3, ...
+      y_padding: 2            # 01, 02, ..., 10, ...
