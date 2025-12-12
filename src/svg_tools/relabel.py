@@ -24,6 +24,10 @@ from .utils import (
 # Format types
 FormatType = Literal["number", "letter", "letter_upper"]
 
+# Sort types
+SortBy = Literal["none", "x_then_y", "y_then_x"]
+SortOrder = Literal["ascending", "descending"]
+
 
 @dataclass
 class GridConfig:
@@ -68,6 +72,15 @@ class FormatConfig:
 
 
 @dataclass
+class SortConfig:
+    """Sort configuration for elements within a group."""
+
+    by: SortBy = "none"
+    x_order: SortOrder = "ascending"
+    y_order: SortOrder = "ascending"
+
+
+@dataclass
 class RelabelGroupRule:
     """Relabeling rules for a group."""
 
@@ -79,6 +92,7 @@ class RelabelGroupRule:
     axis: AxisConfig = field(default_factory=AxisConfig)
     index: IndexConfig = field(default_factory=IndexConfig)
     format: FormatConfig = field(default_factory=FormatConfig)
+    sort: SortConfig = field(default_factory=SortConfig)
 
 
 @dataclass
@@ -109,6 +123,7 @@ class GroupRelabelResult:
     shape_type: ShapeType
     origin: tuple[float, float]
     grid: tuple[float, float]
+    sort: SortConfig | None = None
     changes: list[LabelChange] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
@@ -286,6 +301,26 @@ def parse_relabel_rule_file(rule_path: Path) -> RelabelRule:
             if "y_padding" in fmt_data:
                 fmt.y_padding = int(fmt_data["y_padding"])
 
+        # Sort (optional)
+        sort = SortConfig()
+        if "sort" in group_data:
+            sort_data = group_data["sort"]
+            if "by" in sort_data:
+                sort_by = sort_data["by"]
+                if sort_by not in ("none", "x_then_y", "y_then_x"):
+                    raise ValueError(f"Invalid sort.by value: {sort_by}")
+                sort.by = sort_by
+            if "x_order" in sort_data:
+                x_order = sort_data["x_order"]
+                if x_order not in ("ascending", "descending"):
+                    raise ValueError(f"Invalid sort.x_order value: {x_order}")
+                sort.x_order = x_order
+            if "y_order" in sort_data:
+                y_order = sort_data["y_order"]
+                if y_order not in ("ascending", "descending"):
+                    raise ValueError(f"Invalid sort.y_order value: {y_order}")
+                sort.y_order = y_order
+
         groups.append(
             RelabelGroupRule(
                 name=group_data["name"],
@@ -296,6 +331,7 @@ def parse_relabel_rule_file(rule_path: Path) -> RelabelRule:
                 axis=axis,
                 index=index,
                 format=fmt,
+                sort=sort,
             )
         )
 
@@ -415,6 +451,84 @@ def generate_label(
     )
 
 
+def sort_shapes(
+    shapes: list[ShapeInfo],
+    sort_config: SortConfig,
+) -> list[ShapeInfo]:
+    """Sort shapes according to sort configuration.
+
+    Args:
+        shapes: List of shapes to sort.
+        sort_config: Sort configuration.
+
+    Returns:
+        Sorted list of shapes.
+    """
+    if sort_config.by == "none":
+        return shapes
+
+    x_reverse = sort_config.x_order == "descending"
+    y_reverse = sort_config.y_order == "descending"
+
+    if sort_config.by == "x_then_y":
+        # Sort by X first, then by Y for same X values
+        return sorted(
+            shapes,
+            key=lambda s: (
+                s.center[0] if not x_reverse else -s.center[0],
+                s.center[1] if not y_reverse else -s.center[1],
+            ),
+        )
+    elif sort_config.by == "y_then_x":
+        # Sort by Y first, then by X for same Y values
+        return sorted(
+            shapes,
+            key=lambda s: (
+                s.center[1] if not y_reverse else -s.center[1],
+                s.center[0] if not x_reverse else -s.center[0],
+            ),
+        )
+    else:
+        return shapes
+
+
+def reorder_elements_in_group(
+    group: ET.Element,
+    shapes: list[ShapeInfo],
+) -> None:
+    """Reorder elements within a group according to shapes order.
+
+    Args:
+        group: Group element containing the shapes.
+        shapes: Shapes in the desired order.
+    """
+    # Build a map of element id to element
+    shape_ids = {s.id for s in shapes}
+    shape_elements = []
+    other_elements = []
+
+    for elem in list(group):
+        elem_id = elem.get("id")
+        if elem_id in shape_ids:
+            shape_elements.append(elem)
+            group.remove(elem)
+        else:
+            other_elements.append(elem)
+            group.remove(elem)
+
+    # Re-add other elements first (non-shape elements)
+    for elem in other_elements:
+        group.append(elem)
+
+    # Create a map from id to element for shape elements
+    id_to_elem = {elem.get("id"): elem for elem in shape_elements}
+
+    # Re-add shape elements in sorted order
+    for shape in shapes:
+        if shape.id in id_to_elem:
+            group.append(id_to_elem[shape.id])
+
+
 def check_grid_deviation(
     center: tuple[float, float],
     origin: tuple[float, float],
@@ -465,6 +579,7 @@ def relabel_group(
         shape_type=rule.shape,
         origin=(0.0, 0.0),
         grid=(rule.grid.x, rule.grid.y),
+        sort=rule.sort if rule.sort.by != "none" else None,
     )
 
     if group is None:
@@ -476,6 +591,12 @@ def relabel_group(
 
     if not shapes:
         result.warnings.append(f"No {rule.shape} shapes found in group '{rule.name}'")
+        return result
+
+    # Sort shapes if configured
+    shapes = sort_shapes(shapes, rule.sort)
+
+    if not shapes:
         return result
 
     # Determine origin
@@ -557,6 +678,10 @@ def relabel_group(
                     set_element_label(shape.element, change.new_label)
                     break
 
+        # Reorder elements in the group if sorting is enabled
+        if rule.sort.by != "none":
+            reorder_elements_in_group(group, shapes)
+
     return result
 
 
@@ -610,6 +735,11 @@ def format_relabel_report(report: RelabelReport) -> str:
         lines.append(
             f"  Grid: ({group_result.grid[0]:.2f}, {group_result.grid[1]:.2f})"
         )
+        if group_result.sort:
+            sort_info = f"  Sort: {group_result.sort.by}"
+            if group_result.sort.by != "none":
+                sort_info += f" (x:{group_result.sort.x_order}, y:{group_result.sort.y_order})"
+            lines.append(sort_info)
         lines.append("")
 
         # Warnings

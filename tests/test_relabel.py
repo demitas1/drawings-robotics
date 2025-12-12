@@ -14,6 +14,7 @@ from svg_tools.relabel import (
     AxisConfig,
     IndexConfig,
     FormatConfig,
+    SortConfig,
     RelabelGroupRule,
     RelabelRule,
     LabelChange,
@@ -27,6 +28,8 @@ from svg_tools.relabel import (
     calculate_grid_index,
     generate_label,
     check_grid_deviation,
+    sort_shapes,
+    reorder_elements_in_group,
     relabel_group,
     relabel_svg,
     format_relabel_report,
@@ -113,6 +116,77 @@ class TestDataclasses:
         assert config.y_type == "letter"
         assert config.x_padding == 0
         assert config.y_padding == 0
+
+    def test_sort_config_defaults(self):
+        config = SortConfig()
+        assert config.by == "none"
+        assert config.x_order == "ascending"
+        assert config.y_order == "ascending"
+
+    def test_sort_config_custom(self):
+        config = SortConfig(by="x_then_y", x_order="descending", y_order="ascending")
+        assert config.by == "x_then_y"
+        assert config.x_order == "descending"
+        assert config.y_order == "ascending"
+
+
+class TestSortShapes:
+    """Tests for sort_shapes function."""
+
+    def _create_shapes(self):
+        """Create test shapes at various positions."""
+        from svg_tools.geometry import RectInfo
+        elem = ET.Element("rect")
+        # Create shapes at: (0,0), (2.54,0), (0,2.54), (2.54,2.54)
+        shapes = [
+            RectInfo(element=elem, id="r-2-2", x=2.04, y=2.04, width=1.0, height=1.0),  # center (2.54, 2.54)
+            RectInfo(element=elem, id="r-0-0", x=-0.5, y=-0.5, width=1.0, height=1.0),  # center (0, 0)
+            RectInfo(element=elem, id="r-2-0", x=2.04, y=-0.5, width=1.0, height=1.0),  # center (2.54, 0)
+            RectInfo(element=elem, id="r-0-2", x=-0.5, y=2.04, width=1.0, height=1.0),  # center (0, 2.54)
+        ]
+        return shapes
+
+    def test_sort_none(self):
+        shapes = self._create_shapes()
+        original_order = [s.id for s in shapes]
+        config = SortConfig(by="none")
+        sorted_shapes = sort_shapes(shapes, config)
+        assert [s.id for s in sorted_shapes] == original_order
+
+    def test_sort_x_then_y_ascending(self):
+        shapes = self._create_shapes()
+        config = SortConfig(by="x_then_y", x_order="ascending", y_order="ascending")
+        sorted_shapes = sort_shapes(shapes, config)
+        # Expected order: (0,0), (0,2.54), (2.54,0), (2.54,2.54)
+        assert [s.id for s in sorted_shapes] == ["r-0-0", "r-0-2", "r-2-0", "r-2-2"]
+
+    def test_sort_x_then_y_descending(self):
+        shapes = self._create_shapes()
+        config = SortConfig(by="x_then_y", x_order="descending", y_order="descending")
+        sorted_shapes = sort_shapes(shapes, config)
+        # Expected order: (2.54,2.54), (2.54,0), (0,2.54), (0,0)
+        assert [s.id for s in sorted_shapes] == ["r-2-2", "r-2-0", "r-0-2", "r-0-0"]
+
+    def test_sort_y_then_x_ascending(self):
+        shapes = self._create_shapes()
+        config = SortConfig(by="y_then_x", x_order="ascending", y_order="ascending")
+        sorted_shapes = sort_shapes(shapes, config)
+        # Expected order: (0,0), (2.54,0), (0,2.54), (2.54,2.54)
+        assert [s.id for s in sorted_shapes] == ["r-0-0", "r-2-0", "r-0-2", "r-2-2"]
+
+    def test_sort_y_then_x_descending(self):
+        shapes = self._create_shapes()
+        config = SortConfig(by="y_then_x", x_order="descending", y_order="descending")
+        sorted_shapes = sort_shapes(shapes, config)
+        # Expected order: (2.54,2.54), (0,2.54), (2.54,0), (0,0)
+        assert [s.id for s in sorted_shapes] == ["r-2-2", "r-0-2", "r-2-0", "r-0-0"]
+
+    def test_sort_mixed_orders(self):
+        shapes = self._create_shapes()
+        config = SortConfig(by="x_then_y", x_order="ascending", y_order="descending")
+        sorted_shapes = sort_shapes(shapes, config)
+        # Expected order: (0,2.54), (0,0), (2.54,2.54), (2.54,0)
+        assert [s.id for s in sorted_shapes] == ["r-0-2", "r-0-0", "r-2-2", "r-2-0"]
 
 
 class TestGroupRelabelResult:
@@ -290,6 +364,61 @@ groups:
         assert g.index.y_start == 1
         assert g.format.x_type == "number"
         assert g.format.y_type == "letter"
+        # Sort defaults
+        assert g.sort.by == "none"
+        assert g.sort.x_order == "ascending"
+        assert g.sort.y_order == "ascending"
+
+    @pytest.fixture
+    def rule_file_with_sort(self, tmp_path) -> Path:
+        """Create a rule file with sort options."""
+        content = """
+groups:
+  - name: "shapes"
+    shape: rect
+    label_template: "shape-{x}-{y}"
+    grid:
+      x: 1.0
+      y: 1.0
+    sort:
+      by: x_then_y
+      x_order: descending
+      y_order: ascending
+"""
+        rule_file = tmp_path / "sort.yaml"
+        rule_file.write_text(content)
+        return rule_file
+
+    def test_parse_rule_with_sort(self, rule_file_with_sort):
+        rule = parse_relabel_rule_file(rule_file_with_sort)
+
+        assert len(rule.groups) == 1
+        g = rule.groups[0]
+        assert g.sort.by == "x_then_y"
+        assert g.sort.x_order == "descending"
+        assert g.sort.y_order == "ascending"
+
+    @pytest.fixture
+    def invalid_sort_by_file(self, tmp_path) -> Path:
+        """Create a rule file with invalid sort.by value."""
+        content = """
+groups:
+  - name: "shapes"
+    shape: rect
+    label_template: "shape-{x}-{y}"
+    grid:
+      x: 1.0
+      y: 1.0
+    sort:
+      by: invalid_value
+"""
+        rule_file = tmp_path / "invalid_sort.yaml"
+        rule_file.write_text(content)
+        return rule_file
+
+    def test_parse_invalid_sort_by(self, invalid_sort_by_file):
+        with pytest.raises(ValueError, match="Invalid sort.by"):
+            parse_relabel_rule_file(invalid_sort_by_file)
 
     def test_file_not_found(self):
         with pytest.raises(FileNotFoundError):

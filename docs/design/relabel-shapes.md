@@ -77,6 +77,12 @@ groups:
       y_type: <型>                 # number | letter | letter_upper、デフォルト: letter
       x_padding: <桁数>            # 数値ゼロ埋め桁数、デフォルト: 0（埋めなし）
       y_padding: <桁数>            # 数値ゼロ埋め桁数、デフォルト: 0（埋めなし）
+
+    # ソート設定（省略可）
+    sort:
+      by: <ソート方法>             # none | x_then_y | y_then_x、デフォルト: none
+      x_order: <順序>              # ascending | descending、デフォルト: ascending
+      y_order: <順序>              # ascending | descending、デフォルト: ascending
 ```
 
 ### 3.3 ラベルテンプレート
@@ -100,7 +106,24 @@ groups:
 | `letter` | 小文字アルファベット | `a`, `b`, `c`, ... `z`, `aa`, `ab`, ... |
 | `letter_upper` | 大文字アルファベット | `A`, `B`, `C`, ... `Z`, `AA`, `AB`, ... |
 
-### 3.5 ルールファイル例
+### 3.5 ソート方法
+
+| ソート方法 | 説明 | 要素順序の例（3x2グリッド） |
+|----------|------|----------------------------|
+| `none` | ソートなし（SVG内の出現順） | SVG内の元の順序を維持 |
+| `x_then_y` | X座標でソート後、Y座標でソート | (0,0), (0,1), (1,0), (1,1), (2,0), (2,1) |
+| `y_then_x` | Y座標でソート後、X座標でソート | (0,0), (1,0), (2,0), (0,1), (1,1), (2,1) |
+
+| ソート順序 | 説明 |
+|----------|------|
+| `ascending` | 昇順（小さい値から大きい値） |
+| `descending` | 降順（大きい値から小さい値） |
+
+**ソートの効果:**
+- SVG出力時の要素順序を制御
+- レポートでの変更一覧の表示順序を制御
+
+### 3.6 ルールファイル例
 
 ```yaml
 groups:
@@ -321,6 +344,9 @@ Error: Duplicate label 'hole-1-a' would be assigned to rect123 and rect456
 | `format.y_type` | `letter` | 小文字アルファベット |
 | `format.x_padding` | `0` | ゼロ埋めなし |
 | `format.y_padding` | `0` | ゼロ埋めなし |
+| `sort.by` | `none` | ソートなし |
+| `sort.x_order` | `ascending` | X方向昇順 |
+| `sort.y_order` | `ascending` | Y方向昇順 |
 
 ## 9. 将来拡張
 
