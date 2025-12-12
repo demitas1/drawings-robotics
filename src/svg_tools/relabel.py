@@ -22,7 +22,7 @@ from .utils import (
 
 
 # Format types
-FormatType = Literal["number", "letter", "letter_upper"]
+FormatType = Literal["number", "letter", "letter_upper", "custom"]
 
 # Sort types
 SortBy = Literal["none", "x_then_y", "y_then_x"]
@@ -69,6 +69,8 @@ class FormatConfig:
     y_type: FormatType = "letter"
     x_padding: int = 0
     y_padding: int = 0
+    custom_x: list[str] | None = None
+    custom_y: list[str] | None = None
 
 
 @dataclass
@@ -199,16 +201,26 @@ def to_letter(n: int, upper: bool = False) -> str:
     return text.upper() if upper else text
 
 
-def format_index(index: int, format_type: FormatType, padding: int = 0) -> str:
+def format_index(
+    index: int,
+    format_type: FormatType,
+    padding: int = 0,
+    custom_labels: list[str] | None = None,
+) -> str:
     """Format an index according to the format type.
 
     Args:
         index: The index value (1-based).
-        format_type: Format type ('number', 'letter', 'letter_upper').
+        format_type: Format type ('number', 'letter', 'letter_upper', 'custom').
         padding: Zero-padding width for numbers.
+        custom_labels: Custom label list for 'custom' format type.
 
     Returns:
         Formatted string.
+
+    Raises:
+        ValueError: If format_type is 'custom' but custom_labels is not provided,
+                   or if index exceeds the custom_labels length.
     """
     if format_type == "number":
         if padding > 0:
@@ -218,6 +230,20 @@ def format_index(index: int, format_type: FormatType, padding: int = 0) -> str:
         return to_letter(index, upper=False)
     elif format_type == "letter_upper":
         return to_letter(index, upper=True)
+    elif format_type == "custom":
+        if custom_labels is None:
+            raise ValueError("custom_labels required for 'custom' format type")
+        if index < 1 or index > len(custom_labels):
+            raise ValueError(
+                f"Index {index} out of range for custom labels "
+                f"(valid: 1-{len(custom_labels)})"
+            )
+        label = custom_labels[index - 1]
+        if label == "_":
+            raise ValueError(
+                f"Index {index} maps to reserved skip marker '_' in custom labels"
+            )
+        return label
     else:
         raise ValueError(f"Unknown format type: {format_type}")
 
@@ -293,13 +319,39 @@ def parse_relabel_rule_file(rule_path: Path) -> RelabelRule:
         if "format" in group_data:
             fmt_data = group_data["format"]
             if "x_type" in fmt_data:
-                fmt.x_type = fmt_data["x_type"]
+                x_type = fmt_data["x_type"]
+                if x_type not in ("number", "letter", "letter_upper", "custom"):
+                    raise ValueError(f"Invalid format.x_type value: {x_type}")
+                fmt.x_type = x_type
             if "y_type" in fmt_data:
-                fmt.y_type = fmt_data["y_type"]
+                y_type = fmt_data["y_type"]
+                if y_type not in ("number", "letter", "letter_upper", "custom"):
+                    raise ValueError(f"Invalid format.y_type value: {y_type}")
+                fmt.y_type = y_type
             if "x_padding" in fmt_data:
                 fmt.x_padding = int(fmt_data["x_padding"])
             if "y_padding" in fmt_data:
                 fmt.y_padding = int(fmt_data["y_padding"])
+            if "custom_x" in fmt_data:
+                custom_x = fmt_data["custom_x"]
+                if not isinstance(custom_x, list):
+                    raise ValueError("format.custom_x must be a list")
+                fmt.custom_x = [str(item) for item in custom_x]
+            if "custom_y" in fmt_data:
+                custom_y = fmt_data["custom_y"]
+                if not isinstance(custom_y, list):
+                    raise ValueError("format.custom_y must be a list")
+                fmt.custom_y = [str(item) for item in custom_y]
+
+            # Validate custom type requires custom labels
+            if fmt.x_type == "custom" and fmt.custom_x is None:
+                raise ValueError(
+                    "format.custom_x is required when x_type is 'custom'"
+                )
+            if fmt.y_type == "custom" and fmt.custom_y is None:
+                raise ValueError(
+                    "format.custom_y is required when y_type is 'custom'"
+                )
 
         # Sort (optional)
         sort = SortConfig()
@@ -437,9 +489,12 @@ def generate_label(
 
     Returns:
         Generated label string.
+
+    Raises:
+        ValueError: If custom format type is used but index exceeds custom_labels.
     """
-    x_formatted = format_index(index_x, fmt.x_type, fmt.x_padding)
-    y_formatted = format_index(index_y, fmt.y_type, fmt.y_padding)
+    x_formatted = format_index(index_x, fmt.x_type, fmt.x_padding, fmt.custom_x)
+    y_formatted = format_index(index_y, fmt.y_type, fmt.y_padding, fmt.custom_y)
 
     return template.format(
         x=x_formatted,

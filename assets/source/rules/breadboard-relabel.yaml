@@ -18,7 +18,8 @@ groups:
       y_start: 1
     format:
       x_type: number          # 1, 2, 3, ...
-      y_type: letter          # a, b, c, ...
+      y_type: custom          # a, b, c, ...
+      custom_y: [a, b, c, d, e, f, _, _, g, h, i, j, k, l, _, _, mi, pl]
       x_padding: 0
     sort:
       by: y_then_x            # Sort by row first, then by column
@@ -28,10 +29,10 @@ groups:
   # Relabel small rectangles (pads) with coordinate-based names
   - name: "s-rect"
     shape: rect
-    label_template: "pad-{x}{y}"
+    label_template: "pad-{x}-{y}"
     grid:
-      x: 1.27    # Half pitch
-      y: 1.27
+      x: 2.54    # Standard 0.1" pitch
+      y: 2.54
     axis:
       x_direction: positive
       y_direction: positive
@@ -40,8 +41,9 @@ groups:
       y_start: 1
     format:
       x_type: number          # 1, 2, 3, ...
-      y_type: letter          # A, B, C, ...
-      x_padding: 2            # 01, 02, ..., 10, ...
+      y_type: custom          # a, b, c, ...
+      custom_y: [a, b, c, d, e, f, _, _, g, h, i, j, k, l, _, _, mi, pl]
+      x_padding: 0
     sort:
       by: y_then_x            # Sort by row first, then by column
       x_order: ascending

@@ -86,6 +86,36 @@ class TestFormatIndex:
         assert format_index(26, "letter_upper") == "Z"
         assert format_index(27, "letter_upper") == "AA"
 
+    def test_custom_format(self):
+        custom_labels = ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "pl", "mi"]
+        assert format_index(1, "custom", custom_labels=custom_labels) == "a"
+        assert format_index(10, "custom", custom_labels=custom_labels) == "j"
+        assert format_index(11, "custom", custom_labels=custom_labels) == "pl"
+        assert format_index(12, "custom", custom_labels=custom_labels) == "mi"
+
+    def test_custom_format_out_of_range(self):
+        custom_labels = ["x", "y", "z"]
+        with pytest.raises(ValueError, match="out of range"):
+            format_index(4, "custom", custom_labels=custom_labels)
+        with pytest.raises(ValueError, match="out of range"):
+            format_index(0, "custom", custom_labels=custom_labels)
+
+    def test_custom_format_without_labels(self):
+        with pytest.raises(ValueError, match="custom_labels required"):
+            format_index(1, "custom", custom_labels=None)
+
+    def test_custom_format_skip_marker(self):
+        custom_labels = ["a", "b", "c", "_", "_", "f", "g"]
+        # Valid indices work
+        assert format_index(1, "custom", custom_labels=custom_labels) == "a"
+        assert format_index(3, "custom", custom_labels=custom_labels) == "c"
+        assert format_index(6, "custom", custom_labels=custom_labels) == "f"
+        # Skip markers cause errors
+        with pytest.raises(ValueError, match="skip marker '_'"):
+            format_index(4, "custom", custom_labels=custom_labels)
+        with pytest.raises(ValueError, match="skip marker '_'"):
+            format_index(5, "custom", custom_labels=custom_labels)
+
 
 class TestDataclasses:
     """Tests for configuration dataclasses."""
@@ -116,6 +146,19 @@ class TestDataclasses:
         assert config.y_type == "letter"
         assert config.x_padding == 0
         assert config.y_padding == 0
+        assert config.custom_x is None
+        assert config.custom_y is None
+
+    def test_format_config_with_custom(self):
+        config = FormatConfig(
+            x_type="custom",
+            y_type="custom",
+            custom_x=["1", "2", "3"],
+            custom_y=["a", "b", "c", "pl", "mi"],
+        )
+        assert config.x_type == "custom"
+        assert config.custom_x == ["1", "2", "3"]
+        assert config.custom_y == ["a", "b", "c", "pl", "mi"]
 
     def test_sort_config_defaults(self):
         config = SortConfig()
@@ -419,6 +462,57 @@ groups:
     def test_parse_invalid_sort_by(self, invalid_sort_by_file):
         with pytest.raises(ValueError, match="Invalid sort.by"):
             parse_relabel_rule_file(invalid_sort_by_file)
+
+    @pytest.fixture
+    def rule_file_with_custom_labels(self, tmp_path) -> Path:
+        """Create a rule file with custom labels."""
+        content = """
+groups:
+  - name: "shapes"
+    shape: rect
+    label_template: "item-{x}-{y}"
+    grid:
+      x: 1.0
+      y: 1.0
+    format:
+      x_type: number
+      y_type: custom
+      custom_y: [a, b, c, d, e, f, g, h, i, j, pl, mi]
+"""
+        rule_file = tmp_path / "custom.yaml"
+        rule_file.write_text(content)
+        return rule_file
+
+    def test_parse_rule_with_custom_labels(self, rule_file_with_custom_labels):
+        rule = parse_relabel_rule_file(rule_file_with_custom_labels)
+
+        assert len(rule.groups) == 1
+        g = rule.groups[0]
+        assert g.format.x_type == "number"
+        assert g.format.y_type == "custom"
+        assert g.format.custom_y == ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "pl", "mi"]
+
+    @pytest.fixture
+    def rule_file_custom_without_labels(self, tmp_path) -> Path:
+        """Create a rule file with custom type but no custom labels."""
+        content = """
+groups:
+  - name: "shapes"
+    shape: rect
+    label_template: "item-{x}-{y}"
+    grid:
+      x: 1.0
+      y: 1.0
+    format:
+      y_type: custom
+"""
+        rule_file = tmp_path / "custom_missing.yaml"
+        rule_file.write_text(content)
+        return rule_file
+
+    def test_parse_custom_without_labels(self, rule_file_custom_without_labels):
+        with pytest.raises(ValueError, match="custom_y is required"):
+            parse_relabel_rule_file(rule_file_custom_without_labels)
 
     def test_file_not_found(self):
         with pytest.raises(FileNotFoundError):

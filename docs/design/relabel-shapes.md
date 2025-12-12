@@ -73,10 +73,12 @@ groups:
 
     # ラベルフォーマット（省略可）
     format:
-      x_type: <型>                 # number | letter | letter_upper、デフォルト: number
-      y_type: <型>                 # number | letter | letter_upper、デフォルト: letter
+      x_type: <型>                 # number | letter | letter_upper | custom、デフォルト: number
+      y_type: <型>                 # number | letter | letter_upper | custom、デフォルト: letter
       x_padding: <桁数>            # 数値ゼロ埋め桁数、デフォルト: 0（埋めなし）
       y_padding: <桁数>            # 数値ゼロ埋め桁数、デフォルト: 0（埋めなし）
+      custom_x: [<ラベル>, ...]    # X方向カスタムラベルリスト（x_type: custom時必須）
+      custom_y: [<ラベル>, ...]    # Y方向カスタムラベルリスト（y_type: custom時必須）
 
     # ソート設定（省略可）
     sort:
@@ -105,6 +107,35 @@ groups:
 | `number` | 数値 | `1`, `2`, `3`, ... `26`, `27`, ... |
 | `letter` | 小文字アルファベット | `a`, `b`, `c`, ... `z`, `aa`, `ab`, ... |
 | `letter_upper` | 大文字アルファベット | `A`, `B`, `C`, ... `Z`, `AA`, `AB`, ... |
+| `custom` | カスタムラベルリスト | `custom_x`/`custom_y`で指定した任意の文字列 |
+
+**カスタムラベルの使用例:**
+
+```yaml
+format:
+  y_type: custom
+  custom_y: [a, b, c, d, e, f, g, h, i, j, pl, mi]
+```
+
+インデックス1は`a`、インデックス11は`pl`、インデックス12は`mi`になります。
+
+**スキップマーカー `_`:**
+
+`_` を使用すると、特定のインデックス位置を「使用不可」としてマークできます。
+`_` が割り当てられた要素はエラーとなります。
+
+```yaml
+format:
+  y_type: custom
+  custom_y: [a, b, c, d, e, f, _, _, g, h, i, j, k, l, _, _, mi, pl]
+```
+
+この例では、インデックス7, 8, 15, 16の位置に要素が存在するとエラーになります。
+ブレッドボードの電源ラインなど、穴が存在しない行をスキップするのに便利です。
+
+**エラー条件:**
+- インデックスがカスタムラベルリストの長さを超えた場合
+- インデックスが `_`（スキップマーカー）に対応する場合
 
 ### 3.5 ソート方法
 
@@ -344,6 +375,8 @@ Error: Duplicate label 'hole-1-a' would be assigned to rect123 and rect456
 | `format.y_type` | `letter` | 小文字アルファベット |
 | `format.x_padding` | `0` | ゼロ埋めなし |
 | `format.y_padding` | `0` | ゼロ埋めなし |
+| `format.custom_x` | `null` | X方向カスタムラベル（x_type: custom時必須） |
+| `format.custom_y` | `null` | Y方向カスタムラベル（y_type: custom時必須） |
 | `sort.by` | `none` | ソートなし |
 | `sort.x_order` | `ascending` | X方向昇順 |
 | `sort.y_order` | `ascending` | Y方向昇順 |
