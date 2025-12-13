@@ -27,15 +27,15 @@
      inkscape:deskcolor="#505050"
      inkscape:document-units="mm"
      showgrid="true"
-     inkscape:zoom="5.6568544"
-     inkscape:cx="134.70384"
-     inkscape:cy="110.57382"
+     inkscape:zoom="8.0000003"
+     inkscape:cx="166.74999"
+     inkscape:cy="92.812497"
      inkscape:window-width="3776"
      inkscape:window-height="2070"
      inkscape:window-x="0"
      inkscape:window-y="42"
      inkscape:window-maximized="1"
-     inkscape:current-layer="layer7"
+     inkscape:current-layer="layer6"
      showguides="false">
     <inkscape:grid
        id="grid1"
@@ -94,24 +94,7 @@
     <g
        inkscape:groupmode="layer"
        id="layer6"
-       inkscape:label="text">
-      <text
-         xml:space="preserve"
-         style="font-size:1.41111px;font-family:'GenEi LateGo v2';-inkscape-font-specification:'GenEi LateGo v2';text-align:start;writing-mode:lr-tb;direction:ltr;text-anchor:start;fill:#0007ff;fill-opacity:1;stroke:none;stroke-width:0.4;stroke-linejoin:round;stroke-miterlimit:3;stroke-dasharray:none;stroke-opacity:1;paint-order:markers stroke fill"
-         x="4.722537"
-         y="2.9771128"
-         id="text20"><tspan
-           sodipodi:role="line"
-           id="tspan20"
-           style="writing-mode:lr-tb;fill:#0007ff;fill-opacity:1;stroke:none;stroke-width:0.4;stroke-opacity:1"
-           x="4.722537"
-           y="2.9771128">1</tspan><tspan
-           sodipodi:role="line"
-           style="writing-mode:lr-tb;fill:#0007ff;fill-opacity:1;stroke:none;stroke-width:0.4;stroke-opacity:1"
-           x="4.722537"
-           y="4.7410002"
-           id="tspan21" /></text>
-    </g>
+       inkscape:label="text" />
     <g
        inkscape:groupmode="layer"
        id="layer7"
