@@ -403,12 +403,16 @@ def generate_text_label(
 def create_text_group(
     rule: TextLineRule,
     id_prefix: str = "text",
+    indent: str = "  ",
+    base_indent: int = 0,
 ) -> tuple[ET.Element, GroupAddResult]:
     """Create a group with text elements according to rule.
 
     Args:
         rule: Text line rule.
         id_prefix: Prefix for element IDs.
+        indent: Indentation string (default: 2 spaces).
+        base_indent: Base indentation level for the group.
 
     Returns:
         Tuple of (group_element, GroupAddResult).
@@ -433,7 +437,12 @@ def create_text_group(
     # Generate grid positions
     positions = generate_grid_positions(rule.x_start, rule.x_end, rule.x_interval)
 
+    # Indentation for child elements
+    child_indent = indent * (base_indent + 1)
+    group_indent = indent * base_indent
+
     # Create text elements
+    elements_created = []
     for i, x_pos in enumerate(positions):
         index = rule.format.start + i
 
@@ -453,8 +462,19 @@ def create_text_group(
             element_id=element_id,
         )
 
-        group.append(elem)
+        elements_created.append(elem)
         result.elements.append(info)
+
+    # Add elements with proper formatting
+    if elements_created:
+        group.text = "\n" + child_indent
+        for i, elem in enumerate(elements_created):
+            group.append(elem)
+            if i < len(elements_created) - 1:
+                elem.tail = "\n" + child_indent
+            else:
+                elem.tail = "\n" + group_indent
+        group.tail = "\n"
 
     return group, result
 
@@ -567,7 +587,10 @@ def add_text_to_svg(
         # Use group name as ID prefix
         id_prefix = f"{group_rule.name}-text"
 
-        group_elem, group_result = create_text_group(group_rule, id_prefix)
+        # base_indent=0 for root-level groups, child elements get indent level 1
+        group_elem, group_result = create_text_group(
+            group_rule, id_prefix, indent="  ", base_indent=0
+        )
         report.group_results.append(group_result)
 
         if apply and not group_result.has_errors:
