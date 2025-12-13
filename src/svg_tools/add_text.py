@@ -1,19 +1,21 @@
 """SVG text element auto-generation module."""
 
+import subprocess
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 from xml.etree import ElementTree as ET
 
+import freetype
 import yaml
 
 from .relabel import format_index, FormatType
 from .utils import register_namespaces, SVG_NAMESPACES
 
 
-# Default font metrics ratios (approximate values for most fonts)
-DEFAULT_CAP_HEIGHT_RATIO = 0.72  # Cap height relative to font size
-DEFAULT_CHAR_WIDTH_RATIO = 0.55  # Average character width relative to font size
+# Measurement size for accurate font metrics (larger = more accurate)
+MEASURE_FONT_SIZE_PT = 100
 
 
 @dataclass
@@ -21,7 +23,7 @@ class FontConfig:
     """Font configuration for text elements."""
 
     family: str = "Noto Sans CJK JP"
-    size: float = 1.41111  # px
+    size: float = 1.0  # mm (not px!)
     color: str = "#000000"
 
 
@@ -109,67 +111,187 @@ class AddTextReport:
         return sum(g.element_count for g in self.group_results)
 
 
-def calculate_text_offset(
-    font_size_px: float,
-    text: str,
-    cap_height_ratio: float = DEFAULT_CAP_HEIGHT_RATIO,
-    char_width_ratio: float = DEFAULT_CHAR_WIDTH_RATIO,
-) -> tuple[float, float]:
-    """Calculate offset to center text bounding box at origin.
+@dataclass
+class TextExtents:
+    """Text bounding box extents."""
 
-    SVG text element x,y attributes specify the baseline left position.
-    This function calculates the offset needed to center the bounding box.
+    x_bearing: float  # Left edge offset from origin
+    y_bearing: float  # Top edge offset from baseline (negative = above)
+    width: float  # Bounding box width
+    height: float  # Bounding box height
+    x_advance: float  # Advance width for next character
+
+
+@lru_cache(maxsize=32)
+def find_font_file(font_family: str) -> str | None:
+    """Find font file path using fc-match.
 
     Args:
-        font_size_px: Font size in pixels.
-        text: Text content.
-        cap_height_ratio: Cap height as ratio of font size (default: 0.72).
-        char_width_ratio: Character width as ratio of font size (default: 0.55).
+        font_family: Font family name.
 
     Returns:
-        Tuple of (offset_x, offset_y) in pixels.
+        Path to font file or None if not found.
+    """
+    try:
+        result = subprocess.run(
+            ["fc-match", font_family, "-f", "%{file}"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+    return None
+
+
+@lru_cache(maxsize=8)
+def load_font_face(font_path: str) -> freetype.Face:
+    """Load a FreeType font face.
+
+    Args:
+        font_path: Path to font file.
+
+    Returns:
+        FreeType Face object.
+    """
+    return freetype.Face(font_path)
+
+
+def get_text_extents_freetype(
+    face: freetype.Face,
+    text: str,
+    font_size_pt: float,
+    dpi: int = 96,
+) -> TextExtents:
+    """Get text bounding box using FreeType.
+
+    Args:
+        face: FreeType face object.
+        text: Text to measure.
+        font_size_pt: Font size in points.
+        dpi: DPI for rendering.
+
+    Returns:
+        TextExtents with measurements in font units (relative to font_size_pt).
+    """
+    # Set font size (in 1/64th of points)
+    face.set_char_size(int(font_size_pt * 64), 0, dpi, dpi)
+
+    pen_x = 0
+    min_x = float("inf")
+    max_x = float("-inf")
+    min_y = float("inf")
+    max_y = float("-inf")
+
+    for char in text:
+        face.load_char(char, freetype.FT_LOAD_RENDER)
+        glyph = face.glyph
+
+        left = pen_x + glyph.bitmap_left
+        top = glyph.bitmap_top
+        width = glyph.bitmap.width
+        height = glyph.bitmap.rows
+
+        if width > 0 and height > 0:
+            min_x = min(min_x, left)
+            max_x = max(max_x, left + width)
+            min_y = min(min_y, -top)
+            max_y = max(max_y, -top + height)
+
+        pen_x += glyph.advance.x >> 6
+
+    if min_x == float("inf"):
+        # Empty or whitespace text
+        return TextExtents(0, 0, 0, 0, pen_x)
+
+    return TextExtents(
+        x_bearing=min_x,
+        y_bearing=min_y,
+        width=max_x - min_x,
+        height=max_y - min_y,
+        x_advance=pen_x,
+    )
+
+
+def calculate_text_offset_freetype(
+    font_family: str,
+    font_size_mm: float,
+    text: str,
+) -> tuple[float, float]:
+    """Calculate offset to center text bounding box using FreeType.
+
+    Args:
+        font_family: Font family name.
+        font_size_mm: Font size in mm.
+        text: Text content.
+
+    Returns:
+        Tuple of (offset_x, offset_y) in mm.
         Add these to grid center to get text x,y attributes.
     """
-    # Estimate text width (character count * average width)
-    text_width = len(text) * font_size_px * char_width_ratio
+    font_path = find_font_file(font_family)
+    if font_path is None:
+        # Fallback to estimation if font not found
+        return calculate_text_offset_estimated(font_size_mm, text)
 
-    # Estimate cap height (height of capital letters)
-    cap_height = font_size_px * cap_height_ratio
+    try:
+        face = load_font_face(font_path)
+    except Exception:
+        return calculate_text_offset_estimated(font_size_mm, text)
 
-    # Offset to center horizontally: move left by half width
+    # Measure at large size for accuracy
+    extents = get_text_extents_freetype(face, text, MEASURE_FONT_SIZE_PT)
+
+    # Scale from measurement size to target size
+    # MEASURE_FONT_SIZE_PT points at 96 DPI = MEASURE_FONT_SIZE_PT * 96/72 px
+    measure_size_px = MEASURE_FONT_SIZE_PT * 96 / 72
+    # Convert target font size from mm to px at 96 DPI
+    font_size_px = font_size_mm * 96 / 25.4
+    scale = font_size_px / measure_size_px
+
+    # Calculate offset for centering
+    # Text origin (x,y) is at baseline left
+    # To center bbox at grid point:
+    #   grid_x = text_x + x_bearing + width/2
+    #   text_x = grid_x - x_bearing - width/2
+    #   offset_x = text_x - grid_x = -(x_bearing + width/2)
+    # Result is in target px, then convert to mm
+    offset_x_px = -(extents.x_bearing + extents.width / 2) * scale
+    offset_y_px = -(extents.y_bearing + extents.height / 2) * scale
+
+    # Convert px to mm
+    offset_x_mm = offset_x_px * 25.4 / 96
+    offset_y_mm = offset_y_px * 25.4 / 96
+
+    return (offset_x_mm, offset_y_mm)
+
+
+def calculate_text_offset_estimated(
+    font_size_mm: float,
+    text: str,
+    cap_height_ratio: float = 0.75,
+    char_width_ratio: float = 0.50,
+) -> tuple[float, float]:
+    """Calculate offset using estimated font metrics (fallback).
+
+    Args:
+        font_size_mm: Font size in mm.
+        text: Text content.
+        cap_height_ratio: Cap height as ratio of font size.
+        char_width_ratio: Character width as ratio of font size.
+
+    Returns:
+        Tuple of (offset_x, offset_y) in mm.
+    """
+    text_width = len(text) * font_size_mm * char_width_ratio
+    cap_height = font_size_mm * cap_height_ratio
+
     offset_x = -text_width / 2
-
-    # Offset to center vertically: baseline is at bottom of cap height
-    # To center, we need to move baseline down by half cap height
     offset_y = cap_height / 2
 
     return (offset_x, offset_y)
-
-
-def px_to_mm(px: float, dpi: float = 96.0) -> float:
-    """Convert pixels to millimeters.
-
-    Args:
-        px: Value in pixels.
-        dpi: Dots per inch (default: 96 for SVG).
-
-    Returns:
-        Value in millimeters.
-    """
-    return px * 25.4 / dpi
-
-
-def mm_to_px(mm: float, dpi: float = 96.0) -> float:
-    """Convert millimeters to pixels.
-
-    Args:
-        mm: Value in millimeters.
-        dpi: Dots per inch (default: 96 for SVG).
-
-    Returns:
-        Value in pixels.
-    """
-    return mm * dpi / 25.4
 
 
 def create_text_element(
@@ -181,25 +303,22 @@ def create_text_element(
 ) -> tuple[ET.Element, TextElementInfo]:
     """Create a text element centered at grid position.
 
-    Coordinates are output in mm units to match typical Inkscape SVG files
-    where viewBox uses mm-based user units.
+    All coordinates and font size are in mm units.
 
     Args:
         grid_x_mm: Grid center X coordinate in mm.
         grid_y_mm: Grid center Y coordinate in mm.
         text: Text content.
-        font: Font configuration.
+        font: Font configuration (size in mm).
         element_id: ID for the element.
 
     Returns:
         Tuple of (ET.Element, TextElementInfo).
     """
-    # Calculate offset in pixels (font size is in px)
-    offset_x_px, offset_y_px = calculate_text_offset(font.size, text)
-
-    # Convert offset from px to mm (SVG uses mm user units)
-    offset_x_mm = px_to_mm(offset_x_px)
-    offset_y_mm = px_to_mm(offset_y_px)
+    # Calculate offset using FreeType
+    offset_x_mm, offset_y_mm = calculate_text_offset_freetype(
+        font.family, font.size, text
+    )
 
     # Calculate final text position in mm
     text_x_mm = grid_x_mm + offset_x_mm
@@ -211,9 +330,12 @@ def create_text_element(
     elem.set("id", element_id)
     elem.set("x", f"{text_x_mm:.6f}")
     elem.set("y", f"{text_y_mm:.6f}")
+    # In SVG with mm-based viewBox (e.g., "0 0 210 297" with width="210mm"),
+    # 1 viewBox unit = 1 mm. Font-size is specified in viewBox units (unitless)
+    # so font.size (in mm) directly gives the correct size.
     elem.set(
         "style",
-        f"font-family:{font.family};font-size:{font.size}px;fill:{font.color}",
+        f"font-family:{font.family};font-size:{font.size};fill:{font.color}",
     )
     elem.text = text
 

@@ -51,7 +51,7 @@ groups:
 
     font:                         # フォント設定（省略可）
       family: "<フォント名>"       # フォントファミリー、デフォルト: "Noto Sans CJK JP"
-      size: <サイズ>              # フォントサイズ（px）、デフォルト: 1.41111
+      size: <サイズ>              # フォントサイズ（mm）、デフォルト: 1.0
       color: "<色>"               # 文字色、デフォルト: "#000000"
 
     format:                       # ラベル形式設定（省略可）
@@ -72,7 +72,7 @@ groups:
     x_interval: 2.54
     font:
       family: "Noto Sans CJK JP"
-      size: 1.41111
+      size: 1.4   # mm
       color: "#0000ff"
     format:
       type: number
@@ -108,32 +108,46 @@ groups:
 
 ### 4.2 バウンディングボックス中央配置
 
-text要素の位置はバウンディングボックスの中心がグリッド点に一致するよう計算する：
+text要素の位置はバウンディングボックスの中心がグリッド点に一致するよう計算する。
+FreeTypeライブラリを使用して正確なフォントメトリクスを取得する：
 
 ```
 グリッド位置: (grid_x, grid_y)  # mm単位
 テキスト位置: (text_x, text_y)  # SVG text要素のx,y（ベースライン左端）
 
-オフセット計算（px単位）:
-  text_width = len(text) * font_size * char_width_ratio
-  cap_height = font_size * cap_height_ratio
+FreeTypeによるオフセット計算:
+  1. fc-matchでフォントファイルを検索
+  2. FreeTypeで100ptサイズで測定（精度向上のため）
+  3. バウンディングボックス情報（x_bearing, width, y_bearing, height）を取得
+  4. ターゲットサイズにスケール
 
-  offset_x = -text_width / 2   # 水平中央に配置するため左へシフト
-  offset_y = cap_height / 2    # ベースラインは中心より下なので下へシフト
+  offset_x = -(x_bearing + width / 2)   # 水平中央に配置
+  offset_y = -(y_bearing + height / 2)  # 垂直中央に配置
 
 最終位置:
-  text_x = mm_to_px(grid_x) + offset_x
-  text_y = mm_to_px(grid_y) + offset_y
+  text_x = grid_x + offset_x  # mm単位
+  text_y = grid_y + offset_y  # mm単位
 ```
 
-### 4.3 フォントメトリクス推定値
+### 4.3 フォントメトリクス（フォールバック）
 
-デフォルトのフォントメトリクス比率（概算値）：
+FreeTypeが利用できない場合の推定値：
 
 | メトリクス | 比率 | 説明 |
 |-----------|------|------|
-| `cap_height_ratio` | 0.72 | 大文字の高さ / フォントサイズ |
-| `char_width_ratio` | 0.55 | 平均文字幅 / フォントサイズ |
+| `cap_height_ratio` | 0.75 | 大文字の高さ / フォントサイズ |
+| `char_width_ratio` | 0.50 | 平均文字幅 / フォントサイズ |
+
+### 4.4 SVG font-size互換性
+
+SVGのviewBoxがmm相当の座標系（例: `viewBox="0 0 210 297"` with `width="210mm"`）を使用する場合、
+`font-size`は単位なしで出力される（viewBox単位として解釈される）：
+
+```xml
+<text style="font-size:1.4">  <!-- 1.4 viewBox単位 = 1.4mm -->
+```
+
+これにより、FreeTypeで計算したメトリクスとInkscapeのレンダリング結果が一致する。
 
 ## 5. ラベル形式タイプ
 
@@ -251,7 +265,7 @@ Summary:
 | パラメータ | デフォルト値 | 説明 |
 |-----------|-------------|------|
 | `font.family` | "Noto Sans CJK JP" | フォントファミリー |
-| `font.size` | 1.41111 | フォントサイズ（px） |
+| `font.size` | 1.0 | フォントサイズ（mm） |
 | `font.color` | "#000000" | 文字色 |
 | `format.type` | "number" | 形式タイプ |
 | `format.padding` | 0 | ゼロパディング幅 |
@@ -281,3 +295,11 @@ SVGは標準で96 DPIを使用してpxと物理単位を変換する：
 - 複数行テキスト要素
 - グループ内での可変間隔
 - パスに沿ったテキスト
+
+## 11. 依存関係
+
+| パッケージ | 用途 |
+|-----------|------|
+| `freetype-py` | フォントメトリクス計算 |
+| `PyYAML` | ルールファイル解析 |
+| `fontconfig` (システム) | `fc-match`によるフォント検索 |

@@ -1,0 +1,10 @@
+# SVG Tools Dependencies
+
+# YAML parsing for rule files
+PyYAML>=6.0
+
+# Font metrics calculation for text centering
+freetype-py>=2.5
+
+# Testing
+pytest>=9.0

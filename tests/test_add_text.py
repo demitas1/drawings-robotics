@@ -16,9 +16,8 @@ from svg_tools.add_text import (
     TextElementInfo,
     GroupAddResult,
     AddTextReport,
-    calculate_text_offset,
-    px_to_mm,
-    mm_to_px,
+    calculate_text_offset_estimated,
+    calculate_text_offset_freetype,
     create_text_element,
     generate_grid_positions,
     generate_text_label,
@@ -35,7 +34,7 @@ class TestFontConfig:
     def test_default_values(self):
         config = FontConfig()
         assert config.family == "Noto Sans CJK JP"
-        assert config.size == 1.41111
+        assert config.size == 1.0  # mm
         assert config.color == "#000000"
 
     def test_custom_values(self):
@@ -197,58 +196,40 @@ class TestAddTextReport:
 
 
 class TestCalculateTextOffset:
-    """Tests for calculate_text_offset function."""
+    """Tests for calculate_text_offset_estimated function."""
 
     def test_single_digit(self):
-        offset_x, offset_y = calculate_text_offset(10.0, "1")
-        # Width estimate: 1 * 10 * 0.55 = 5.5
-        # Cap height estimate: 10 * 0.72 = 7.2
-        # offset_x = -5.5/2 = -2.75
-        # offset_y = 7.2/2 = 3.6
-        assert offset_x == pytest.approx(-2.75)
-        assert offset_y == pytest.approx(3.6)
+        # Using default ratios: cap_height_ratio=0.75, char_width_ratio=0.50
+        offset_x, offset_y = calculate_text_offset_estimated(10.0, "1")
+        # Width estimate: 1 * 10 * 0.50 = 5.0
+        # Cap height estimate: 10 * 0.75 = 7.5
+        # offset_x = -5.0/2 = -2.5
+        # offset_y = 7.5/2 = 3.75
+        assert offset_x == pytest.approx(-2.5)
+        assert offset_y == pytest.approx(3.75)
 
     def test_double_digit(self):
-        offset_x, offset_y = calculate_text_offset(10.0, "12")
-        # Width estimate: 2 * 10 * 0.55 = 11.0
-        # offset_x = -11.0/2 = -5.5
-        assert offset_x == pytest.approx(-5.5)
-        assert offset_y == pytest.approx(3.6)
+        offset_x, offset_y = calculate_text_offset_estimated(10.0, "12")
+        # Width estimate: 2 * 10 * 0.50 = 10.0
+        # offset_x = -10.0/2 = -5.0
+        assert offset_x == pytest.approx(-5.0)
+        assert offset_y == pytest.approx(3.75)
 
     def test_triple_digit(self):
-        offset_x, offset_y = calculate_text_offset(10.0, "123")
-        # Width estimate: 3 * 10 * 0.55 = 16.5
-        # offset_x = -16.5/2 = -8.25
-        assert offset_x == pytest.approx(-8.25)
-        assert offset_y == pytest.approx(3.6)
+        offset_x, offset_y = calculate_text_offset_estimated(10.0, "123")
+        # Width estimate: 3 * 10 * 0.50 = 15.0
+        # offset_x = -15.0/2 = -7.5
+        assert offset_x == pytest.approx(-7.5)
+        assert offset_y == pytest.approx(3.75)
 
     def test_custom_ratios(self):
-        offset_x, offset_y = calculate_text_offset(
+        offset_x, offset_y = calculate_text_offset_estimated(
             10.0, "1", cap_height_ratio=0.8, char_width_ratio=0.6
         )
         # Width: 1 * 10 * 0.6 = 6.0
         # Cap height: 10 * 0.8 = 8.0
         assert offset_x == pytest.approx(-3.0)
         assert offset_y == pytest.approx(4.0)
-
-
-class TestConversionFunctions:
-    """Tests for px_to_mm and mm_to_px."""
-
-    def test_px_to_mm(self):
-        # At 96 DPI: 1 inch = 96px = 25.4mm
-        assert px_to_mm(96.0) == pytest.approx(25.4)
-        assert px_to_mm(1.0) == pytest.approx(25.4 / 96.0)
-
-    def test_mm_to_px(self):
-        # At 96 DPI: 25.4mm = 1 inch = 96px
-        assert mm_to_px(25.4) == pytest.approx(96.0)
-        assert mm_to_px(1.0) == pytest.approx(96.0 / 25.4)
-
-    def test_roundtrip(self):
-        original = 10.0
-        assert px_to_mm(mm_to_px(original)) == pytest.approx(original)
-        assert mm_to_px(px_to_mm(original)) == pytest.approx(original)
 
 
 class TestGenerateGridPositions:
@@ -336,10 +317,10 @@ class TestCreateTextElement:
         assert elem.get("id") == "text-1"
         assert elem.text == "1"
 
-        # Check style
+        # Check style (font-size is unitless for SVG viewBox compatibility)
         style = elem.get("style")
         assert "font-family:Arial" in style
-        assert "font-size:10.0px" in style
+        assert "font-size:10.0" in style  # unitless (viewBox units = mm)
         assert "fill:#000000" in style
 
         # Check info
@@ -530,7 +511,7 @@ groups:
         g = rule.groups[0]
         # Check defaults
         assert g.font.family == "Noto Sans CJK JP"
-        assert g.font.size == 1.41111
+        assert g.font.size == 1.0  # mm
         assert g.font.color == "#000000"
         assert g.format.type == "number"
         assert g.format.padding == 0
