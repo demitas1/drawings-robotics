@@ -23,6 +23,12 @@ groups:
       start: 0
       end: 6.2831853  # 2 * pi
 
+  - name: "connection"
+    shape: path
+    grid:
+      x: 1.27
+      y: 1.27
+
 tolerance:
   acceptable: 0.001      # 0.001mm or 0.001rad
   error_threshold: 0.1   # 10%

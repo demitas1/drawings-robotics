@@ -88,8 +88,48 @@ class ArcInfo:
         return abs(self.end - self.start)
 
 
-ShapeInfo = RectInfo | ArcInfo
-ShapeType = Literal["rect", "arc"]
+@dataclass
+class PathInfo:
+    """Information extracted from a path element (line segments).
+
+    Supports simple paths with M (move to) and L/H/V (line to) commands.
+    Stores start and end points for grid alignment.
+    """
+
+    element: ET.Element
+    id: str
+    start_x: float
+    start_y: float
+    end_x: float
+    end_y: float
+
+    @property
+    def bbox(self) -> BoundingBox:
+        """Get bounding box."""
+        min_x = min(self.start_x, self.end_x)
+        min_y = min(self.start_y, self.end_y)
+        width = abs(self.end_x - self.start_x)
+        height = abs(self.end_y - self.start_y)
+        return BoundingBox(min_x, min_y, width, height)
+
+    @property
+    def center(self) -> tuple[float, float]:
+        """Center coordinates."""
+        return self.bbox.center
+
+    @property
+    def is_vertical(self) -> bool:
+        """Check if path is a vertical line."""
+        return abs(self.start_x - self.end_x) < 0.001
+
+    @property
+    def is_horizontal(self) -> bool:
+        """Check if path is a horizontal line."""
+        return abs(self.start_y - self.end_y) < 0.001
+
+
+ShapeInfo = RectInfo | ArcInfo | PathInfo
+ShapeType = Literal["rect", "arc", "path"]
 
 
 def parse_rect(element: ET.Element) -> RectInfo | None:
@@ -149,6 +189,174 @@ def parse_arc(element: ET.Element) -> ArcInfo | None:
         return None
 
 
+def parse_path(element: ET.Element) -> PathInfo | None:
+    """Parse a path element (simple line paths, not arcs).
+
+    Supports paths with M (moveto) and L/H/V (lineto) commands.
+    Both absolute (M, L, H, V) and relative (m, l, h, v) commands are supported.
+
+    Args:
+        element: SVG path element.
+
+    Returns:
+        PathInfo or None if not a simple line path or parsing fails.
+    """
+    if get_local_name(element.tag) != "path":
+        return None
+
+    # Skip arc elements (handled by parse_arc)
+    sodipodi_ns = SVG_NAMESPACES["sodipodi"]
+    if element.get(f"{{{sodipodi_ns}}}type") == "arc":
+        return None
+
+    d = element.get("d", "")
+    if not d:
+        return None
+
+    try:
+        return _parse_path_d(element, d)
+    except (ValueError, IndexError):
+        return None
+
+
+def _parse_path_d(element: ET.Element, d: str) -> PathInfo | None:
+    """Parse path d attribute to extract start and end points.
+
+    Args:
+        element: SVG path element.
+        d: Path data string.
+
+    Returns:
+        PathInfo or None if parsing fails.
+    """
+    # Tokenize: split on command letters while keeping them
+    import re
+    tokens = re.findall(r'[MmLlHhVvZz]|[-+]?\d*\.?\d+', d)
+
+    if not tokens:
+        return None
+
+    current_x = 0.0
+    current_y = 0.0
+    start_x = 0.0
+    start_y = 0.0
+    end_x = 0.0
+    end_y = 0.0
+    has_start = False
+
+    i = 0
+    while i < len(tokens):
+        cmd = tokens[i]
+
+        if cmd in ('M', 'm'):
+            # Moveto command
+            i += 1
+            x = float(tokens[i])
+            i += 1
+            y = float(tokens[i])
+            i += 1
+
+            if cmd == 'm' and has_start:
+                # Relative moveto
+                x += current_x
+                y += current_y
+
+            current_x = x
+            current_y = y
+
+            if not has_start:
+                start_x = x
+                start_y = y
+                has_start = True
+
+            end_x = x
+            end_y = y
+
+        elif cmd == 'L':
+            # Absolute lineto
+            i += 1
+            x = float(tokens[i])
+            i += 1
+            y = float(tokens[i])
+            i += 1
+            current_x = x
+            current_y = y
+            end_x = x
+            end_y = y
+
+        elif cmd == 'l':
+            # Relative lineto
+            i += 1
+            dx = float(tokens[i])
+            i += 1
+            dy = float(tokens[i])
+            i += 1
+            current_x += dx
+            current_y += dy
+            end_x = current_x
+            end_y = current_y
+
+        elif cmd == 'H':
+            # Absolute horizontal lineto
+            i += 1
+            x = float(tokens[i])
+            i += 1
+            current_x = x
+            end_x = x
+            end_y = current_y
+
+        elif cmd == 'h':
+            # Relative horizontal lineto
+            i += 1
+            dx = float(tokens[i])
+            i += 1
+            current_x += dx
+            end_x = current_x
+            end_y = current_y
+
+        elif cmd == 'V':
+            # Absolute vertical lineto
+            i += 1
+            y = float(tokens[i])
+            i += 1
+            current_y = y
+            end_x = current_x
+            end_y = y
+
+        elif cmd == 'v':
+            # Relative vertical lineto
+            i += 1
+            dy = float(tokens[i])
+            i += 1
+            current_y += dy
+            end_x = current_x
+            end_y = current_y
+
+        elif cmd in ('Z', 'z'):
+            # Close path - end point goes back to start
+            end_x = start_x
+            end_y = start_y
+            current_x = start_x
+            current_y = start_y
+            i += 1
+
+        else:
+            # Unknown command or number (skip)
+            i += 1
+
+    if not has_start:
+        return None
+
+    return PathInfo(
+        element=element,
+        id=element.get("id", ""),
+        start_x=start_x,
+        start_y=start_y,
+        end_x=end_x,
+        end_y=end_y,
+    )
+
+
 def parse_shape(element: ET.Element, shape_type: ShapeType) -> ShapeInfo | None:
     """Parse an element as the specified shape type.
 
@@ -163,6 +371,8 @@ def parse_shape(element: ET.Element, shape_type: ShapeType) -> ShapeInfo | None:
         return parse_rect(element)
     elif shape_type == "arc":
         return parse_arc(element)
+    elif shape_type == "path":
+        return parse_path(element)
     return None
 
 
@@ -295,3 +505,46 @@ def update_arc(
         element.set(f"{{{sodipodi_ns}}}start", str(start))
     if end is not None:
         element.set(f"{{{sodipodi_ns}}}end", str(end))
+
+
+def update_path(
+    element: ET.Element,
+    start_x: float | None = None,
+    start_y: float | None = None,
+    end_x: float | None = None,
+    end_y: float | None = None,
+) -> None:
+    """Update path element d attribute with new start/end points.
+
+    Reconstructs the path d attribute based on the line type (H, V, or L).
+
+    Args:
+        element: SVG path element.
+        start_x: New start x (or None to keep current).
+        start_y: New start y (or None to keep current).
+        end_x: New end x (or None to keep current).
+        end_y: New end y (or None to keep current).
+    """
+    # Parse current path to get existing values
+    info = parse_path(element)
+    if info is None:
+        return
+
+    # Apply new values
+    sx = start_x if start_x is not None else info.start_x
+    sy = start_y if start_y is not None else info.start_y
+    ex = end_x if end_x is not None else info.end_x
+    ey = end_y if end_y is not None else info.end_y
+
+    # Determine path type and construct d attribute
+    if abs(sx - ex) < 0.001:
+        # Vertical line
+        d = f"M {sx},{sy} V {ey}"
+    elif abs(sy - ey) < 0.001:
+        # Horizontal line
+        d = f"M {sx},{sy} H {ex}"
+    else:
+        # Diagonal line
+        d = f"M {sx},{sy} L {ex},{ey}"
+
+    element.set("d", d)

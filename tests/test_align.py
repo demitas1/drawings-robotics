@@ -9,7 +9,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from svg_tools.utils import SVG_NAMESPACES, find_group_by_label
-from svg_tools.geometry import RectInfo, ArcInfo
+from svg_tools.geometry import RectInfo, ArcInfo, PathInfo
 from svg_tools.align import (
     GridRule,
     SizeRule,
@@ -25,9 +25,11 @@ from svg_tools.align import (
     iter_shapes_in_group,
     validate_rect,
     validate_arc,
+    validate_path,
     validate_shape,
     fix_rect,
     fix_arc,
+    fix_path,
     validate_and_fix_group,
     validate_svg,
     format_report,
@@ -565,6 +567,131 @@ class TestFixArc:
         fix_arc(info, result, rule)
 
         assert elem.get(f"{{{sodipodi_ns}}}end") == "6.2831853"
+
+
+class TestIterShapesInGroupPath:
+    """Tests for iter_shapes_in_group function with path type."""
+
+    def test_iter_paths(self):
+        svg_ns = SVG_NAMESPACES["svg"]
+
+        group = ET.Element(f"{{{svg_ns}}}g")
+        ET.SubElement(
+            group,
+            f"{{{svg_ns}}}path",
+            {"id": "path1", "d": "M 5.08,5.08 V 17.78"},
+        )
+        ET.SubElement(
+            group,
+            f"{{{svg_ns}}}path",
+            {"id": "path2", "d": "M 7.62,5.08 V 17.78"},
+        )
+        ET.SubElement(group, f"{{{svg_ns}}}rect", {"id": "rect1"})  # Should be ignored
+
+        shapes = list(iter_shapes_in_group(group, "path"))
+        assert len(shapes) == 2
+        assert all(isinstance(s, PathInfo) for s in shapes)
+        assert shapes[0].id == "path1"
+        assert shapes[1].id == "path2"
+
+
+class TestValidatePath:
+    """Tests for validate_path function."""
+
+    def test_valid_path(self):
+        elem = ET.Element("path", {"id": "path1", "d": "M 5.08,5.08 V 17.78"})
+        info = PathInfo(
+            element=elem,
+            id="path1",
+            start_x=5.08,
+            start_y=5.08,
+            end_x=5.08,
+            end_y=17.78,
+        )
+        rule = GroupRule(name="test", shape="path", grid=GridRule(x=1.27, y=1.27))
+        tolerance = ToleranceConfig()
+
+        result = validate_path(info, rule, tolerance)
+
+        assert result.is_ok is True
+        assert len(result.issues) == 0
+
+    def test_invalid_start_position(self):
+        elem = ET.Element("path", {"id": "path1", "d": "M 5.1,5.1 V 17.8"})
+        info = PathInfo(
+            element=elem,
+            id="path1",
+            start_x=5.1,
+            start_y=5.1,
+            end_x=5.1,
+            end_y=17.8,
+        )
+        rule = GroupRule(name="test", shape="path", grid=GridRule(x=1.27, y=1.27))
+        tolerance = ToleranceConfig()
+
+        result = validate_path(info, rule, tolerance)
+
+        assert result.has_fixable is True
+        assert len(result.issues) == 4  # start_x, start_y, end_x, end_y
+
+
+class TestFixPath:
+    """Tests for fix_path function."""
+
+    def test_fix_start_position(self):
+        elem = ET.Element("path", {"id": "path1", "d": "M 5.1,5.1 V 17.8"})
+        info = PathInfo(
+            element=elem,
+            id="path1",
+            start_x=5.1,
+            start_y=5.1,
+            end_x=5.1,
+            end_y=17.8,
+        )
+        result = ValidationResult(
+            element_id="path1",
+            shape_type="path",
+            issues=[
+                Issue("path1", "start_x", "fixable", 5.1, 5.08, 0.02, "msg"),
+                Issue("path1", "start_y", "fixable", 5.1, 5.08, 0.02, "msg"),
+                Issue("path1", "end_x", "fixable", 5.1, 5.08, 0.02, "msg"),
+                Issue("path1", "end_y", "fixable", 17.8, 17.78, 0.02, "msg"),
+            ],
+        )
+        rule = GroupRule(name="test", shape="path", grid=GridRule(x=1.27, y=1.27))
+
+        fix_path(info, result, rule)
+
+        d = elem.get("d")
+        assert "5.08" in d
+        assert "17.78" in d
+
+    def test_fix_horizontal_path(self):
+        elem = ET.Element("path", {"id": "path1", "d": "M 5.1,45.72 H 78.8"})
+        info = PathInfo(
+            element=elem,
+            id="path1",
+            start_x=5.1,
+            start_y=45.72,
+            end_x=78.8,
+            end_y=45.72,
+        )
+        result = ValidationResult(
+            element_id="path1",
+            shape_type="path",
+            issues=[
+                Issue("path1", "start_x", "fixable", 5.1, 5.08, 0.02, "msg"),
+                Issue("path1", "end_x", "fixable", 78.8, 78.74, 0.06, "msg"),
+            ],
+        )
+        rule = GroupRule(name="test", shape="path", grid=GridRule(x=1.27, y=1.27))
+
+        fix_path(info, result, rule)
+
+        d = elem.get("d")
+        assert "5.08" in d
+        assert "78.74" in d
+        assert "H" in d
 
 
 class TestValidateSvg:

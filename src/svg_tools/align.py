@@ -10,15 +10,18 @@ import yaml
 
 from .geometry import (
     ArcInfo,
+    PathInfo,
     RectInfo,
     ShapeInfo,
     ShapeType,
     check_grid_alignment,
     check_value_match,
     parse_arc,
+    parse_path,
     parse_rect,
     snap_to_grid,
     update_arc,
+    update_path,
     update_rect,
 )
 from .utils import find_group_by_label, register_namespaces
@@ -216,7 +219,7 @@ def parse_rule_file(rule_path: Path) -> AlignmentRule:
             raise ValueError("Each group must have 'name' and 'shape' fields")
 
         shape = group_data["shape"]
-        if shape not in ("rect", "arc"):
+        if shape not in ("rect", "arc", "path"):
             raise ValueError(f"Unsupported shape type: {shape}")
 
         grid = None
@@ -263,6 +266,8 @@ def iter_shapes_in_group(
             info = parse_rect(elem)
         elif shape_type == "arc":
             info = parse_arc(elem)
+        elif shape_type == "path":
+            info = parse_path(elem)
         else:
             continue
 
@@ -508,6 +513,95 @@ def validate_arc(
     return result
 
 
+def validate_path(
+    info: PathInfo,
+    rule: GroupRule,
+    tolerance: ToleranceConfig,
+) -> ValidationResult:
+    """Validate a path element against rules.
+
+    Checks that start and end points are aligned to the grid.
+
+    Args:
+        info: Path information.
+        rule: Group rule to validate against.
+        tolerance: Tolerance configuration.
+
+    Returns:
+        Validation result.
+    """
+    result = ValidationResult(element_id=info.id, shape_type="path")
+
+    # Check grid alignment for start point
+    if rule.grid:
+        aligned, dev = check_grid_alignment(info.start_x, rule.grid.x, tolerance.acceptable)
+        if not aligned:
+            ratio = dev / rule.grid.x if rule.grid.x != 0 else dev
+            status: IssueStatus = "fixable" if ratio <= tolerance.error_threshold else "error"
+            result.issues.append(
+                Issue(
+                    element_id=info.id,
+                    field="start_x",
+                    status=status,
+                    actual=info.start_x,
+                    expected=snap_to_grid(info.start_x, rule.grid.x),
+                    deviation=dev,
+                    message=f"start_x={info.start_x:.6f} (remainder: {dev:.6f})",
+                )
+            )
+
+        aligned, dev = check_grid_alignment(info.start_y, rule.grid.y, tolerance.acceptable)
+        if not aligned:
+            ratio = dev / rule.grid.y if rule.grid.y != 0 else dev
+            status = "fixable" if ratio <= tolerance.error_threshold else "error"
+            result.issues.append(
+                Issue(
+                    element_id=info.id,
+                    field="start_y",
+                    status=status,
+                    actual=info.start_y,
+                    expected=snap_to_grid(info.start_y, rule.grid.y),
+                    deviation=dev,
+                    message=f"start_y={info.start_y:.6f} (remainder: {dev:.6f})",
+                )
+            )
+
+        # Check grid alignment for end point
+        aligned, dev = check_grid_alignment(info.end_x, rule.grid.x, tolerance.acceptable)
+        if not aligned:
+            ratio = dev / rule.grid.x if rule.grid.x != 0 else dev
+            status = "fixable" if ratio <= tolerance.error_threshold else "error"
+            result.issues.append(
+                Issue(
+                    element_id=info.id,
+                    field="end_x",
+                    status=status,
+                    actual=info.end_x,
+                    expected=snap_to_grid(info.end_x, rule.grid.x),
+                    deviation=dev,
+                    message=f"end_x={info.end_x:.6f} (remainder: {dev:.6f})",
+                )
+            )
+
+        aligned, dev = check_grid_alignment(info.end_y, rule.grid.y, tolerance.acceptable)
+        if not aligned:
+            ratio = dev / rule.grid.y if rule.grid.y != 0 else dev
+            status = "fixable" if ratio <= tolerance.error_threshold else "error"
+            result.issues.append(
+                Issue(
+                    element_id=info.id,
+                    field="end_y",
+                    status=status,
+                    actual=info.end_y,
+                    expected=snap_to_grid(info.end_y, rule.grid.y),
+                    deviation=dev,
+                    message=f"end_y={info.end_y:.6f} (remainder: {dev:.6f})",
+                )
+            )
+
+    return result
+
+
 def validate_shape(
     info: ShapeInfo,
     rule: GroupRule,
@@ -527,6 +621,8 @@ def validate_shape(
         return validate_rect(info, rule, tolerance)
     elif isinstance(info, ArcInfo):
         return validate_arc(info, rule, tolerance)
+    elif isinstance(info, PathInfo):
+        return validate_path(info, rule, tolerance)
     else:
         raise ValueError(f"Unknown shape type: {type(info)}")
 
@@ -622,6 +718,49 @@ def fix_arc(
             update_arc(info.element, cy=issue.expected)
 
 
+def fix_path(
+    info: PathInfo,
+    result: ValidationResult,
+    rule: GroupRule,
+) -> None:
+    """Fix a path element based on validation result.
+
+    Snaps start and end points to grid positions.
+
+    Args:
+        info: Path information.
+        result: Validation result.
+        rule: Group rule.
+    """
+    new_start_x: float | None = None
+    new_start_y: float | None = None
+    new_end_x: float | None = None
+    new_end_y: float | None = None
+
+    for issue in result.issues:
+        if issue.status != "fixable":
+            continue
+
+        if issue.field == "start_x" and rule.grid:
+            new_start_x = issue.expected
+        elif issue.field == "start_y" and rule.grid:
+            new_start_y = issue.expected
+        elif issue.field == "end_x" and rule.grid:
+            new_end_x = issue.expected
+        elif issue.field == "end_y" and rule.grid:
+            new_end_y = issue.expected
+
+    # Apply all fixes at once
+    if any(v is not None for v in [new_start_x, new_start_y, new_end_x, new_end_y]):
+        update_path(
+            info.element,
+            start_x=new_start_x,
+            start_y=new_start_y,
+            end_x=new_end_x,
+            end_y=new_end_y,
+        )
+
+
 def fix_shape(
     info: ShapeInfo,
     result: ValidationResult,
@@ -638,6 +777,8 @@ def fix_shape(
         fix_rect(info, result, rule)
     elif isinstance(info, ArcInfo):
         fix_arc(info, result, rule)
+    elif isinstance(info, PathInfo):
+        fix_path(info, result, rule)
 
 
 def validate_and_fix_group(

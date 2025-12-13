@@ -4,7 +4,7 @@
 
 ### 1.1 目的
 
-Inkscapeで作成されたSVGファイル内の形状要素（rect, arc）を検査し、指定されたグリッドおよびサイズ仕様に適合するよう修正するツールを提供する。
+Inkscapeで作成されたSVGファイル内の形状要素（rect, arc, path）を検査し、指定されたグリッドおよびサイズ仕様に適合するよう修正するツールを提供する。
 
 ### 1.2 背景
 
@@ -42,11 +42,11 @@ YAML形式で記述する。
 ```yaml
 groups:
   - name: "<グループ名>"      # inkscape:label属性で指定されたグループ名
-    shape: <形状タイプ>       # rect | arc
+    shape: <形状タイプ>       # rect | arc | path
     grid:                     # グリッド位置検査（省略可）
       x: <グリッド単位>       # X方向グリッド単位（mm）
       y: <グリッド単位>       # Y方向グリッド単位（mm）
-    size:                     # サイズ検査（省略可）
+    size:                     # サイズ検査（省略可、rect/arcのみ）
       width: <幅>             # 期待する幅（mm）
       height: <高さ>          # 期待する高さ（mm）
     arc:                      # arc形状固有パラメータ（省略可）
@@ -83,6 +83,12 @@ groups:
       start: 0
       end: 6.2831853
 
+  - name: "connection"
+    shape: path
+    grid:
+      x: 1.27
+      y: 1.27
+
 tolerance:
   acceptable: 0.001
   error_threshold: 0.1
@@ -96,6 +102,7 @@ tolerance:
 |-----------|---------|------|
 | `rect` | `<rect>` | 矩形要素 |
 | `arc` | `<path sodipodi:type="arc">` | Inkscape円弧要素 |
+| `path` | `<path>` (arc以外) | 線分パス要素 |
 
 ### 4.2 グループの識別
 
@@ -108,14 +115,17 @@ tolerance:
 |------|--------|----------|
 | rect | 中心座標 | `(x + width/2, y + height/2)` |
 | arc | 中心座標 | `(sodipodi:cx, sodipodi:cy)` |
+| path | 始点・終点 | d属性から抽出した `(start_x, start_y)`, `(end_x, end_y)` |
 
 ### 4.4 検査項目
 
 #### 4.4.1 グリッド位置検査
 
-中心座標が指定グリッド単位の倍数であることを検査する。
+中心座標（rect, arc）または始点・終点座標（path）が指定グリッド単位の倍数であることを検査する。
 
-- **検査対象**: X座標、Y座標それぞれ
+- **検査対象**:
+  - rect/arc: 中心のX座標、Y座標
+  - path: 始点のX座標、Y座標、終点のX座標、Y座標
 - **判定基準**: `座標 % グリッド単位` の余り（または`グリッド単位 - 余り`の小さい方）
 
 #### 4.4.2 サイズ検査
@@ -131,6 +141,18 @@ tolerance:
 
 - **開始角度**: `sodipodi:start`
 - **終了角度**: `sodipodi:end`
+
+#### 4.4.4 path固有パラメータ
+
+pathはd属性から始点・終点を抽出する。対応するSVGパスコマンド:
+
+| コマンド | 説明 |
+|---------|------|
+| `M`/`m` | Moveto（絶対/相対） |
+| `L`/`l` | Lineto（絶対/相対） |
+| `H`/`h` | 水平Lineto（絶対/相対） |
+| `V`/`v` | 垂直Lineto（絶対/相対） |
+| `Z`/`z` | クローズパス |
 
 ### 4.5 判定ロジック
 
@@ -171,6 +193,20 @@ tolerance:
 sodipodi:cx = スナップ後の中心x
 sodipodi:cy = スナップ後の中心y
 ```
+
+### 5.5 path要素の修正
+
+始点・終点をスナップし、d属性を再生成する。
+
+```
+スナップ後の始点 = (round(start_x / grid) * grid, round(start_y / grid) * grid)
+スナップ後の終点 = (round(end_x / grid) * grid, round(end_y / grid) * grid)
+```
+
+パスの種類に応じたd属性の再生成:
+- **垂直線**: `start_x == end_x` の場合 → `M start_x,start_y V end_y`
+- **水平線**: `start_y == end_y` の場合 → `M start_x,start_y H end_x`
+- **斜め線**: それ以外 → `M start_x,start_y L end_x,end_y`
 
 ## 6. 出力仕様
 
@@ -218,10 +254,11 @@ Group: <グループ名> (<形状タイプ>)
 
 ### 7.1 対応形状
 
-現バージョンで対応する形状は以下の2種類のみ。
+現バージョンで対応する形状は以下の3種類。
 
 - rect
 - arc（Inkscape sodipodi:type="arc"）
+- path（線分パス、M/L/H/V/Zコマンドのみ）
 
 ### 7.2 SVG名前空間
 

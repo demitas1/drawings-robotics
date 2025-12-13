@@ -12,14 +12,17 @@ from svg_tools.geometry import (
     BoundingBox,
     RectInfo,
     ArcInfo,
+    PathInfo,
     parse_rect,
     parse_arc,
+    parse_path,
     parse_shape,
     snap_to_grid,
     check_grid_alignment,
     check_value_match,
     update_rect,
     update_arc,
+    update_path,
 )
 
 
@@ -405,3 +408,179 @@ class TestUpdateArc:
         )
         update_arc(elem, cx=None)
         assert elem.get(f"{{{sodipodi_ns}}}cx") == "50"
+
+
+class TestPathInfo:
+    """Tests for PathInfo dataclass."""
+
+    def test_bbox(self):
+        elem = ET.Element("path")
+        info = PathInfo(
+            element=elem,
+            id="path-001",
+            start_x=10.0,
+            start_y=20.0,
+            end_x=30.0,
+            end_y=40.0,
+        )
+        bbox = info.bbox
+        assert bbox.x == 10.0
+        assert bbox.y == 20.0
+        assert bbox.width == 20.0
+        assert bbox.height == 20.0
+
+    def test_center(self):
+        elem = ET.Element("path")
+        info = PathInfo(
+            element=elem,
+            id="path-001",
+            start_x=0.0,
+            start_y=0.0,
+            end_x=10.0,
+            end_y=20.0,
+        )
+        assert info.center == (5.0, 10.0)
+
+    def test_is_vertical(self):
+        elem = ET.Element("path")
+        info = PathInfo(
+            element=elem,
+            id="path-001",
+            start_x=5.08,
+            start_y=5.08,
+            end_x=5.08,
+            end_y=17.78,
+        )
+        assert info.is_vertical is True
+        assert info.is_horizontal is False
+
+    def test_is_horizontal(self):
+        elem = ET.Element("path")
+        info = PathInfo(
+            element=elem,
+            id="path-001",
+            start_x=5.08,
+            start_y=45.72,
+            end_x=78.74,
+            end_y=45.72,
+        )
+        assert info.is_vertical is False
+        assert info.is_horizontal is True
+
+
+class TestParsePath:
+    """Tests for parse_path function."""
+
+    def test_vertical_path_absolute(self):
+        elem = ET.Element("path", {"id": "path-001", "d": "M 5.08,5.08 V 17.78"})
+        info = parse_path(elem)
+        assert info is not None
+        assert info.id == "path-001"
+        assert info.start_x == pytest.approx(5.08)
+        assert info.start_y == pytest.approx(5.08)
+        assert info.end_x == pytest.approx(5.08)
+        assert info.end_y == pytest.approx(17.78)
+
+    def test_horizontal_path_absolute(self):
+        elem = ET.Element("path", {"id": "path-002", "d": "M 5.08,45.72 H 78.74"})
+        info = parse_path(elem)
+        assert info is not None
+        assert info.start_x == pytest.approx(5.08)
+        assert info.start_y == pytest.approx(45.72)
+        assert info.end_x == pytest.approx(78.74)
+        assert info.end_y == pytest.approx(45.72)
+
+    def test_lineto_path_absolute(self):
+        elem = ET.Element("path", {"id": "path-003", "d": "M 0,0 L 10,20"})
+        info = parse_path(elem)
+        assert info is not None
+        assert info.start_x == 0.0
+        assert info.start_y == 0.0
+        assert info.end_x == 10.0
+        assert info.end_y == 20.0
+
+    def test_relative_moveto_horizontal(self):
+        elem = ET.Element("path", {"id": "path-004", "d": "m 45.72,48.26 h 33.02"})
+        info = parse_path(elem)
+        assert info is not None
+        assert info.start_x == pytest.approx(45.72)
+        assert info.start_y == pytest.approx(48.26)
+        assert info.end_x == pytest.approx(78.74)
+        assert info.end_y == pytest.approx(48.26)
+
+    def test_relative_vertical(self):
+        elem = ET.Element("path", {"id": "path-005", "d": "M 5.08,5.08 v 12.7"})
+        info = parse_path(elem)
+        assert info is not None
+        assert info.start_x == pytest.approx(5.08)
+        assert info.start_y == pytest.approx(5.08)
+        assert info.end_x == pytest.approx(5.08)
+        assert info.end_y == pytest.approx(17.78)
+
+    def test_arc_path_returns_none(self):
+        sodipodi_ns = SVG_NAMESPACES["sodipodi"]
+        elem = ET.Element(
+            "path",
+            {
+                "id": "arc-001",
+                "d": "...",
+                f"{{{sodipodi_ns}}}type": "arc",
+            },
+        )
+        info = parse_path(elem)
+        assert info is None
+
+    def test_non_path_element(self):
+        elem = ET.Element("rect", {"id": "rect-001"})
+        info = parse_path(elem)
+        assert info is None
+
+    def test_empty_d_attribute(self):
+        elem = ET.Element("path", {"id": "path-001", "d": ""})
+        info = parse_path(elem)
+        assert info is None
+
+
+class TestParseShapePath:
+    """Tests for parse_shape function with path type."""
+
+    def test_parse_path_shape(self):
+        elem = ET.Element("path", {"id": "path-001", "d": "M 5.08,5.08 V 17.78"})
+        info = parse_shape(elem, "path")
+        assert info is not None
+        assert isinstance(info, PathInfo)
+
+    def test_wrong_shape_type_for_path(self):
+        elem = ET.Element("path", {"id": "path-001", "d": "M 5.08,5.08 V 17.78"})
+        info = parse_shape(elem, "rect")
+        assert info is None
+
+
+class TestUpdatePath:
+    """Tests for update_path function."""
+
+    def test_update_vertical_path(self):
+        elem = ET.Element("path", {"id": "path-001", "d": "M 5.08,5.08 V 17.78"})
+        update_path(elem, start_x=5.1, start_y=5.1, end_x=5.1, end_y=17.8)
+        d = elem.get("d")
+        assert "M 5.1,5.1" in d
+        assert "V 17.8" in d
+
+    def test_update_horizontal_path(self):
+        elem = ET.Element("path", {"id": "path-002", "d": "M 5.08,45.72 H 78.74"})
+        update_path(elem, end_x=80.0)
+        d = elem.get("d")
+        assert "H 80.0" in d
+
+    def test_update_diagonal_path(self):
+        elem = ET.Element("path", {"id": "path-003", "d": "M 0,0 L 10,20"})
+        update_path(elem, end_x=15.0, end_y=25.0)
+        d = elem.get("d")
+        assert "L 15.0,25.0" in d
+
+    def test_update_none_keeps_original(self):
+        elem = ET.Element("path", {"id": "path-001", "d": "M 5.08,5.08 V 17.78"})
+        update_path(elem)
+        d = elem.get("d")
+        assert "5.08" in d
+        assert "17.78" in d
