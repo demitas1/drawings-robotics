@@ -70,7 +70,8 @@ class TestTextFormatConfig:
 class TestTextLineRule:
     """Tests for TextLineRule dataclass."""
 
-    def test_basic_rule(self):
+    def test_horizontal_rule(self):
+        """Test horizontal layout (y fixed, x varies)."""
         rule = TextLineRule(
             name="labels",
             y=2.54,
@@ -83,9 +84,38 @@ class TestTextLineRule:
         assert rule.x_start == 5.08
         assert rule.x_end == 20.32
         assert rule.x_interval == 2.54
+        # Check layout properties
+        assert rule.is_horizontal is True
+        assert rule.is_vertical is False
+        assert rule.fixed_coord == 2.54
+        assert rule.start_coord == 5.08
+        assert rule.end_coord == 20.32
+        assert rule.interval == 2.54
         # Check defaults
         assert rule.font.family == "Noto Sans CJK JP"
         assert rule.format.type == "number"
+
+    def test_vertical_rule(self):
+        """Test vertical layout (x fixed, y varies)."""
+        rule = TextLineRule(
+            name="row-labels",
+            x=2.54,
+            y_start=5.08,
+            y_end=38.1,
+            y_interval=2.54,
+        )
+        assert rule.name == "row-labels"
+        assert rule.x == 2.54
+        assert rule.y_start == 5.08
+        assert rule.y_end == 38.1
+        assert rule.y_interval == 2.54
+        # Check layout properties
+        assert rule.is_horizontal is False
+        assert rule.is_vertical is True
+        assert rule.fixed_coord == 2.54
+        assert rule.start_coord == 5.08
+        assert rule.end_coord == 38.1
+        assert rule.interval == 2.54
 
     def test_rule_with_font_and_format(self):
         rule = TextLineRule(
@@ -105,24 +135,42 @@ class TestTextLineRule:
 class TestGroupAddResult:
     """Tests for GroupAddResult dataclass."""
 
-    def test_empty_result(self):
+    def test_empty_horizontal_result(self):
+        """Test empty horizontal layout result."""
         result = GroupAddResult(
             group_name="test",
-            y=2.54,
-            x_start=5.08,
-            x_end=10.16,
-            x_interval=2.54,
+            fixed_axis="y",
+            fixed_value=2.54,
+            start=5.08,
+            end=10.16,
+            interval=2.54,
         )
         assert result.element_count == 0
         assert result.has_errors is False
+        assert result.is_vertical is False
+
+    def test_empty_vertical_result(self):
+        """Test empty vertical layout result."""
+        result = GroupAddResult(
+            group_name="test",
+            fixed_axis="x",
+            fixed_value=2.54,
+            start=5.08,
+            end=38.1,
+            interval=2.54,
+        )
+        assert result.element_count == 0
+        assert result.has_errors is False
+        assert result.is_vertical is True
 
     def test_result_with_elements(self):
         result = GroupAddResult(
             group_name="test",
-            y=2.54,
-            x_start=5.08,
-            x_end=10.16,
-            x_interval=2.54,
+            fixed_axis="y",
+            fixed_value=2.54,
+            start=5.08,
+            end=10.16,
+            interval=2.54,
             elements=[
                 TextElementInfo("t1", "1", 5.08, 2.54, 5.0, 2.6),
                 TextElementInfo("t2", "2", 7.62, 2.54, 7.5, 2.6),
@@ -133,10 +181,11 @@ class TestGroupAddResult:
     def test_result_with_errors(self):
         result = GroupAddResult(
             group_name="test",
-            y=2.54,
-            x_start=5.08,
-            x_end=10.16,
-            x_interval=2.54,
+            fixed_axis="y",
+            fixed_value=2.54,
+            start=5.08,
+            end=10.16,
+            interval=2.54,
             errors=["Some error"],
         )
         assert result.has_errors is True
@@ -153,10 +202,11 @@ class TestAddTextReport:
     def test_report_with_groups(self):
         group1 = GroupAddResult(
             group_name="g1",
-            y=2.54,
-            x_start=5.08,
-            x_end=10.16,
-            x_interval=2.54,
+            fixed_axis="y",
+            fixed_value=2.54,
+            start=5.08,
+            end=10.16,
+            interval=2.54,
             elements=[
                 TextElementInfo("t1", "1", 5.08, 2.54, 5.0, 2.6),
                 TextElementInfo("t2", "2", 7.62, 2.54, 7.5, 2.6),
@@ -164,10 +214,11 @@ class TestAddTextReport:
         )
         group2 = GroupAddResult(
             group_name="g2",
-            y=5.08,
-            x_start=5.08,
-            x_end=7.62,
-            x_interval=2.54,
+            fixed_axis="y",
+            fixed_value=5.08,
+            start=5.08,
+            end=7.62,
+            interval=2.54,
             elements=[
                 TextElementInfo("t3", "A", 5.08, 5.08, 5.0, 5.1),
             ],
@@ -182,10 +233,11 @@ class TestAddTextReport:
     def test_report_with_errors(self):
         group = GroupAddResult(
             group_name="g1",
-            y=2.54,
-            x_start=5.08,
-            x_end=10.16,
-            x_interval=2.54,
+            fixed_axis="y",
+            fixed_value=2.54,
+            start=5.08,
+            end=10.16,
+            interval=2.54,
             errors=["Error"],
         )
         report = AddTextReport(
@@ -433,6 +485,64 @@ class TestCreateTextGroup:
         assert len(result.elements) == 2
         assert len(result.errors) == 2
 
+    def test_vertical_group(self):
+        """Test vertical layout (x fixed, y varies)."""
+        rule = TextLineRule(
+            name="row-labels",
+            x=2.54,
+            y_start=0.0,
+            y_end=5.08,
+            y_interval=2.54,
+            format=TextFormatConfig(type="letter", start=1),
+        )
+        group, result = create_text_group(rule)
+
+        # Check group attributes
+        svg_ns = SVG_NAMESPACES["svg"]
+        inkscape_ns = SVG_NAMESPACES["inkscape"]
+        assert group.tag == f"{{{svg_ns}}}g"
+        assert group.get("id") == "row-labels"
+        assert group.get(f"{{{inkscape_ns}}}label") == "row-labels"
+
+        # Check children
+        children = list(group)
+        assert len(children) == 3
+
+        # Check result
+        assert result.group_name == "row-labels"
+        assert result.is_vertical is True
+        assert result.fixed_value == 2.54
+        assert result.element_count == 3
+        assert not result.has_errors
+
+        # Check element labels
+        labels = [info.text for info in result.elements]
+        assert labels == ["a", "b", "c"]
+
+        # Check element positions (x fixed, y varies)
+        for i, info in enumerate(result.elements):
+            assert info.grid_x == pytest.approx(2.54)  # x is fixed
+            expected_y = i * 2.54  # y varies: 0.0, 2.54, 5.08
+            assert info.grid_y == pytest.approx(expected_y)
+
+    def test_vertical_custom_labels_with_skip(self):
+        """Test vertical layout with custom labels including skip marker."""
+        rule = TextLineRule(
+            name="row-labels",
+            x=2.54,
+            y_start=0.0,
+            y_end=7.62,
+            y_interval=2.54,
+            format=TextFormatConfig(type="custom", custom=["a", "b", "_", "c"]),
+        )
+        group, result = create_text_group(rule)
+
+        # "a", "b" succeed, "_" errors, "c" succeeds
+        assert len(result.elements) == 3
+        assert len(result.errors) == 1  # Skip marker error
+        labels = [info.text for info in result.elements]
+        assert labels == ["a", "b", "c"]
+
 
 class TestParseAddTextRuleFile:
     """Tests for parse_add_text_rule_file function."""
@@ -564,24 +674,165 @@ groups:
             parse_add_text_rule_file(missing_custom_labels_file)
 
     @pytest.fixture
-    def missing_required_file(self, tmp_path) -> Path:
-        """Create a rule file missing required fields."""
+    def missing_horizontal_fields_file(self, tmp_path) -> Path:
+        """Create a rule file with incomplete horizontal layout fields."""
         content = """
 groups:
   - name: "labels"
     y: 2.54
+    x_start: 0.0
 """
-        rule_file = tmp_path / "missing.yaml"
+        rule_file = tmp_path / "missing_horizontal.yaml"
         rule_file.write_text(content)
         return rule_file
 
-    def test_parse_missing_required_fields(self, missing_required_file):
-        with pytest.raises(ValueError, match="must have"):
-            parse_add_text_rule_file(missing_required_file)
+    def test_parse_missing_horizontal_fields(self, missing_horizontal_fields_file):
+        """Test error when horizontal layout fields are incomplete."""
+        with pytest.raises(ValueError, match="Horizontal layout requires"):
+            parse_add_text_rule_file(missing_horizontal_fields_file)
+
+    @pytest.fixture
+    def missing_vertical_fields_file(self, tmp_path) -> Path:
+        """Create a rule file with incomplete vertical layout fields."""
+        content = """
+groups:
+  - name: "labels"
+    x: 2.54
+    y_start: 0.0
+"""
+        rule_file = tmp_path / "missing_vertical.yaml"
+        rule_file.write_text(content)
+        return rule_file
+
+    def test_parse_missing_vertical_fields(self, missing_vertical_fields_file):
+        """Test error when vertical layout fields are incomplete."""
+        with pytest.raises(ValueError, match="Vertical layout requires"):
+            parse_add_text_rule_file(missing_vertical_fields_file)
 
     def test_file_not_found(self):
         with pytest.raises(FileNotFoundError):
             parse_add_text_rule_file(Path("/nonexistent/rule.yaml"))
+
+    @pytest.fixture
+    def vertical_rule_file(self, tmp_path) -> Path:
+        """Create a vertical layout rule file."""
+        content = """
+groups:
+  - name: "row-labels"
+    x: 2.54
+    y_start: 5.08
+    y_end: 38.1
+    y_interval: 2.54
+    font:
+      family: "Noto Sans CJK JP"
+      size: 1.4
+      color: "#0000ff"
+    format:
+      type: custom
+      custom: [a, b, c, d, e, f, _, _, g, h, i, j, k, l]
+"""
+        rule_file = tmp_path / "vertical.yaml"
+        rule_file.write_text(content)
+        return rule_file
+
+    def test_parse_vertical_rule(self, vertical_rule_file):
+        """Test parsing vertical layout rule."""
+        rule = parse_add_text_rule_file(vertical_rule_file)
+
+        assert len(rule.groups) == 1
+        g = rule.groups[0]
+        assert g.name == "row-labels"
+        assert g.x == 2.54
+        assert g.y_start == 5.08
+        assert g.y_end == 38.1
+        assert g.y_interval == 2.54
+        assert g.is_vertical is True
+        assert g.is_horizontal is False
+        assert g.format.type == "custom"
+        assert len(g.format.custom) == 14
+
+    @pytest.fixture
+    def mixed_layout_rule_file(self, tmp_path) -> Path:
+        """Create a rule file with both horizontal and vertical layouts."""
+        content = """
+groups:
+  - name: "col-labels"
+    y: 2.54
+    x_start: 5.08
+    x_end: 78.74
+    x_interval: 2.54
+    format:
+      type: number
+
+  - name: "row-labels"
+    x: 2.54
+    y_start: 5.08
+    y_end: 15.24
+    y_interval: 2.54
+    format:
+      type: letter
+"""
+        rule_file = tmp_path / "mixed.yaml"
+        rule_file.write_text(content)
+        return rule_file
+
+    def test_parse_mixed_layout_rule(self, mixed_layout_rule_file):
+        """Test parsing rule with both horizontal and vertical layouts."""
+        rule = parse_add_text_rule_file(mixed_layout_rule_file)
+
+        assert len(rule.groups) == 2
+
+        g1 = rule.groups[0]
+        assert g1.name == "col-labels"
+        assert g1.is_horizontal is True
+        assert g1.is_vertical is False
+
+        g2 = rule.groups[1]
+        assert g2.name == "row-labels"
+        assert g2.is_horizontal is False
+        assert g2.is_vertical is True
+
+    @pytest.fixture
+    def invalid_both_layouts_file(self, tmp_path) -> Path:
+        """Create an invalid rule file with both layout types."""
+        content = """
+groups:
+  - name: "invalid"
+    y: 2.54
+    x_start: 5.08
+    x_end: 10.16
+    x_interval: 2.54
+    x: 2.54
+    y_start: 5.08
+    y_end: 10.16
+    y_interval: 2.54
+"""
+        rule_file = tmp_path / "invalid_both.yaml"
+        rule_file.write_text(content)
+        return rule_file
+
+    def test_parse_invalid_both_layouts(self, invalid_both_layouts_file):
+        """Test error when both horizontal and vertical fields specified."""
+        with pytest.raises(ValueError, match="Cannot specify both"):
+            parse_add_text_rule_file(invalid_both_layouts_file)
+
+    @pytest.fixture
+    def invalid_no_layout_file(self, tmp_path) -> Path:
+        """Create an invalid rule file with neither layout type."""
+        content = """
+groups:
+  - name: "invalid"
+    format:
+      type: number
+"""
+        rule_file = tmp_path / "invalid_no_layout.yaml"
+        rule_file.write_text(content)
+        return rule_file
+
+    def test_parse_invalid_no_layout(self, invalid_no_layout_file):
+        """Test error when neither horizontal nor vertical fields specified."""
+        with pytest.raises(ValueError, match="Must specify either"):
+            parse_add_text_rule_file(invalid_no_layout_file)
 
 
 class TestAddTextToSvg:
@@ -680,13 +931,15 @@ class TestFormatAddTextReport:
         assert "test.svg" in text
         assert "Total elements: 0" in text
 
-    def test_format_report_with_elements(self):
+    def test_format_horizontal_report_with_elements(self):
+        """Test formatting horizontal layout report."""
         group = GroupAddResult(
             group_name="labels",
-            y=2.54,
-            x_start=0.0,
-            x_end=5.08,
-            x_interval=2.54,
+            fixed_axis="y",
+            fixed_value=2.54,
+            start=0.0,
+            end=5.08,
+            interval=2.54,
             elements=[
                 TextElementInfo("t1", "1", 0.0, 2.54, -0.1, 2.6),
                 TextElementInfo("t2", "2", 2.54, 2.54, 2.44, 2.6),
@@ -701,17 +954,49 @@ class TestFormatAddTextReport:
         text = format_add_text_report(report)
 
         assert "labels" in text
+        assert "Layout: horizontal" in text
         assert "Y: 2.54 mm" in text
+        assert "X range: 0.00 - 5.08 mm" in text
+        assert "Elements: 3" in text
+        assert "Total elements: 3" in text
+
+    def test_format_vertical_report_with_elements(self):
+        """Test formatting vertical layout report."""
+        group = GroupAddResult(
+            group_name="row-labels",
+            fixed_axis="x",
+            fixed_value=2.54,
+            start=0.0,
+            end=5.08,
+            interval=2.54,
+            elements=[
+                TextElementInfo("t1", "a", 2.54, 0.0, 2.5, 0.1),
+                TextElementInfo("t2", "b", 2.54, 2.54, 2.5, 2.64),
+                TextElementInfo("t3", "c", 2.54, 5.08, 2.5, 5.18),
+            ],
+        )
+        report = AddTextReport(
+            file_path=Path("test.svg"),
+            group_results=[group],
+        )
+
+        text = format_add_text_report(report)
+
+        assert "row-labels" in text
+        assert "Layout: vertical" in text
+        assert "X: 2.54 mm" in text
+        assert "Y range: 0.00 - 5.08 mm" in text
         assert "Elements: 3" in text
         assert "Total elements: 3" in text
 
     def test_format_report_with_errors(self):
         group = GroupAddResult(
             group_name="labels",
-            y=2.54,
-            x_start=0.0,
-            x_end=5.08,
-            x_interval=2.54,
+            fixed_axis="y",
+            fixed_value=2.54,
+            start=0.0,
+            end=5.08,
+            interval=2.54,
             errors=["Failed to generate label"],
         )
         report = AddTextReport(
@@ -727,10 +1012,11 @@ class TestFormatAddTextReport:
     def test_format_report_with_warnings(self):
         group = GroupAddResult(
             group_name="labels",
-            y=2.54,
-            x_start=0.0,
-            x_end=5.08,
-            x_interval=2.54,
+            fixed_axis="y",
+            fixed_value=2.54,
+            start=0.0,
+            end=5.08,
+            interval=2.54,
             warnings=["Some warning"],
         )
         report = AddTextReport(

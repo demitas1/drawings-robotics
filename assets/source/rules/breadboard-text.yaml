@@ -2,7 +2,7 @@
 # Target: svg-test1-breadboard1.svg
 
 groups:
-  - name: "s-text"
+  - name: "s-text-1"
     y: 2.54
     x_start: 5.08
     x_end: 78.74
@@ -15,3 +15,28 @@ groups:
       type: number
       padding: 0
       start: 1
+  - name: "s-text-2"
+    y: 40.64
+    x_start: 5.08
+    x_end: 78.74
+    x_interval: 2.54
+    font:
+        family: "Noto Sans CJK JP"
+        size: 1.4  # mm
+        color: "#0000ff"
+    format:
+      type: number
+      padding: 0
+      start: 1
+  - name: "s-text-3"
+    x: 2.54
+    y_start: 5.08
+    y_end: 38.1
+    y_interval: 2.54
+    font:
+        family: "Noto Sans CJK JP"
+        size: 1.4  # mm
+        color: "#0000ff"
+    format:
+      type: custom
+      custom: [a, b, c, d, e, f, ' ', ' ', g, h, i, j, k, l]

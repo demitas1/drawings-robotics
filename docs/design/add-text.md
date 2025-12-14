@@ -41,10 +41,17 @@ YAML形式で記述する。
 
 ### 3.2 構造
 
+2つのレイアウトモードをサポート：
+- **横配置（Horizontal）**: Y座標固定、X軸方向に配置
+- **縦配置（Vertical）**: X座標固定、Y軸方向に配置
+
+レイアウトモードはフィールドの存在で自動判定される。
+
 ```yaml
 groups:
+  # 横配置（Horizontal）: Y固定、X可変
   - name: "<グループ名>"          # 作成するグループ名（inkscape:label）
-    y: <y座標>                    # Y座標（mm）
+    y: <y座標>                    # 固定Y座標（mm）
     x_start: <開始x座標>          # 開始X座標（mm）
     x_end: <終了x座標>            # 終了X座標（mm）
     x_interval: <x間隔>           # X間隔（mm）
@@ -59,12 +66,31 @@ groups:
       padding: <パディング>       # ゼロパディング幅、デフォルト: 0
       start: <開始インデックス>   # 開始インデックス、デフォルト: 1
       custom: []                  # カスタムラベルリスト（type: custom時）
+
+  # 縦配置（Vertical）: X固定、Y可変
+  - name: "<グループ名>"          # 作成するグループ名（inkscape:label）
+    x: <x座標>                    # 固定X座標（mm）
+    y_start: <開始y座標>          # 開始Y座標（mm）
+    y_end: <終了y座標>            # 終了Y座標（mm）
+    y_interval: <y間隔>           # Y間隔（mm）
+    font: ...                     # 上記と同じ
+    format: ...                   # 上記と同じ
 ```
+
+### 3.2.1 レイアウトモード
+
+| モード | 固定軸 | 可変軸 | 必須フィールド |
+|--------|-------|--------|----------------|
+| 横配置（Horizontal） | Y | X | `y`, `x_start`, `x_end`, `x_interval` |
+| 縦配置（Vertical） | X | Y | `x`, `y_start`, `y_end`, `y_interval` |
+
+**注意**: 同一グループに横配置と縦配置の両方のフィールドを指定するとエラーになる。
 
 ### 3.3 ルールファイル例
 
 ```yaml
 groups:
+  # 横配置の例（列ラベル）
   - name: "col-labels"
     y: 2.54
     x_start: 5.08
@@ -79,6 +105,7 @@ groups:
       padding: 0
       start: 1
 
+  # 横配置の例（単一位置）
   - name: "row-labels-left"
     y: 5.08
     x_start: 2.54
@@ -88,6 +115,21 @@ groups:
       type: letter
       start: 1
 
+  # 縦配置の例（行ラベル）
+  - name: "row-labels"
+    x: 2.54
+    y_start: 5.08
+    y_end: 38.1
+    y_interval: 2.54
+    font:
+      family: "Noto Sans CJK JP"
+      size: 1.4
+      color: "#0000ff"
+    format:
+      type: custom
+      custom: [a, b, c, d, e, f, _, _, g, h, i, j, k, l]
+
+  # カスタムラベルの例
   - name: "custom-labels"
     y: 10.16
     x_start: 0.0
@@ -103,8 +145,15 @@ groups:
 ### 4.1 座標系
 
 - すべての座標はミリメートル（mm）単位
-- グリッド位置は`x_start`から`x_end`まで`x_interval`刻みで計算
 - テキストのバウンディングボックス中心がグリッド位置に配置される
+
+**横配置（Horizontal）の場合：**
+- グリッド位置は`x_start`から`x_end`まで`x_interval`刻みで計算
+- Y座標は`y`で固定
+
+**縦配置（Vertical）の場合：**
+- グリッド位置は`y_start`から`y_end`まで`y_interval`刻みで計算
+- X座標は`x`で固定
 
 ### 4.2 バウンディングボックス中央配置
 
@@ -192,17 +241,52 @@ format:
   custom: ["+", "a", "b", "c", "d", "e", "-"]
 ```
 
+#### スキップマーカー
+
+`_`（アンダースコア）はスキップマーカーとして予約されている。
+このインデックスに対応する位置ではテキスト要素は生成されず、エラーとして報告される。
+
+```yaml
+format:
+  type: custom
+  custom: [a, b, c, _, _, d, e, f]  # インデックス4,5はスキップ
+```
+
+これはブレッドボードの電源レール（穴がない行）などに有用。
+
 ## 6. 出力仕様
 
 ### 6.1 レポート出力（標準出力）
 
+**横配置（Horizontal）の場合：**
 ```
 File: <入力ファイルパス>
 
 Group: <グループ名>
+  Layout: horizontal (Y fixed)
   Y: <y座標> mm
   X range: <開始x> - <終了x> mm
   X interval: <x間隔> mm
+  Elements: <要素数>
+
+  Created elements:
+    <要素ID>: "<テキスト>" at (<grid_x>, <grid_y>) mm
+    ...
+
+Summary:
+  Total groups: <グループ数>
+  Total elements: <総要素数>
+```
+
+**縦配置（Vertical）の場合：**
+```
+File: <入力ファイルパス>
+
+Group: <グループ名>
+  Layout: vertical (X fixed)
+  X: <x座標> mm
+  Y range: <開始y> - <終了y> mm
+  Y interval: <y間隔> mm
   Elements: <要素数>
 
   Created elements:
@@ -285,9 +369,11 @@ SVGは標準で96 DPIを使用してpxと物理単位を変換する：
 
 ### 10.1 対応機能
 
-- グループごとに1行のテキスト（全要素が同じY座標）
-- 複数行は複数グループで定義可能
+- 2つのレイアウトモード: 横配置（Y固定）と縦配置（X固定）
+- グループごとに1ライン（行または列）のテキスト
+- 複数ラインは複数グループで定義可能
 - 開始インデックスからの連番ラベル
+- カスタムラベルのスキップマーカー（`_`）
 
 ### 10.2 未対応機能
 
@@ -295,6 +381,7 @@ SVGは標準で96 DPIを使用してpxと物理単位を変換する：
 - 複数行テキスト要素
 - グループ内での可変間隔
 - パスに沿ったテキスト
+- 斜め配置
 
 ## 11. 依存関係
 

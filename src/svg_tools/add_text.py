@@ -5,6 +5,9 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
+
+# Layout direction type
+LayoutDirection = Literal["horizontal", "vertical"]
 from xml.etree import ElementTree as ET
 
 import freetype
@@ -39,15 +42,68 @@ class TextFormatConfig:
 
 @dataclass
 class TextLineRule:
-    """Rule for a single line of text elements."""
+    """Rule for a single line of text elements.
+
+    Supports two layout modes:
+    - Horizontal: y fixed, x varies (x_start, x_end, x_interval)
+    - Vertical: x fixed, y varies (y_start, y_end, y_interval)
+
+    The layout mode is determined automatically based on which fields are set.
+    """
 
     name: str  # Group name to create
-    y: float  # Y coordinate (mm)
-    x_start: float  # Start X coordinate (mm)
-    x_end: float  # End X coordinate (mm)
-    x_interval: float  # X interval (mm)
     font: FontConfig = field(default_factory=FontConfig)
     format: TextFormatConfig = field(default_factory=TextFormatConfig)
+
+    # Horizontal layout (y fixed, x varies)
+    y: float | None = None  # Fixed Y coordinate (mm)
+    x_start: float | None = None  # Start X coordinate (mm)
+    x_end: float | None = None  # End X coordinate (mm)
+    x_interval: float | None = None  # X interval (mm)
+
+    # Vertical layout (x fixed, y varies)
+    x: float | None = None  # Fixed X coordinate (mm)
+    y_start: float | None = None  # Start Y coordinate (mm)
+    y_end: float | None = None  # End Y coordinate (mm)
+    y_interval: float | None = None  # Y interval (mm)
+
+    @property
+    def is_vertical(self) -> bool:
+        """Check if this is a vertical layout (x fixed, y varies)."""
+        return self.x is not None and self.y_start is not None
+
+    @property
+    def is_horizontal(self) -> bool:
+        """Check if this is a horizontal layout (y fixed, x varies)."""
+        return self.y is not None and self.x_start is not None
+
+    @property
+    def fixed_coord(self) -> float:
+        """Get the fixed coordinate value."""
+        if self.is_vertical:
+            return self.x  # type: ignore
+        return self.y  # type: ignore
+
+    @property
+    def start_coord(self) -> float:
+        """Get the start coordinate of the varying axis."""
+        if self.is_vertical:
+            return self.y_start  # type: ignore
+        return self.x_start  # type: ignore
+
+    @property
+    def end_coord(self) -> float:
+        """Get the end coordinate of the varying axis."""
+        if self.is_vertical:
+            return self.y_end  # type: ignore
+        return self.x_end  # type: ignore
+
+    @property
+    def interval(self) -> float:
+        """Get the interval of the varying axis."""
+        if self.is_vertical:
+            return self.y_interval  # type: ignore
+        return self.x_interval  # type: ignore
 
 
 @dataclass
@@ -71,16 +127,28 @@ class TextElementInfo:
 
 @dataclass
 class GroupAddResult:
-    """Result of adding text elements to a group."""
+    """Result of adding text elements to a group.
+
+    Uses axis-agnostic naming for coordinates:
+    - fixed_axis: "x" or "y" - the axis with a fixed coordinate
+    - fixed_value: the coordinate value on the fixed axis
+    - start/end/interval: range on the varying axis
+    """
 
     group_name: str
-    y: float
-    x_start: float
-    x_end: float
-    x_interval: float
+    fixed_axis: Literal["x", "y"]  # "x" for vertical, "y" for horizontal
+    fixed_value: float  # Value on the fixed axis (mm)
+    start: float  # Start coordinate on varying axis (mm)
+    end: float  # End coordinate on varying axis (mm)
+    interval: float  # Interval on varying axis (mm)
     elements: list[TextElementInfo] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+
+    @property
+    def is_vertical(self) -> bool:
+        """Check if this is a vertical layout (x fixed)."""
+        return self.fixed_axis == "x"
 
     @property
     def element_count(self) -> int:
@@ -408,6 +476,9 @@ def create_text_group(
 ) -> tuple[ET.Element, GroupAddResult]:
     """Create a group with text elements according to rule.
 
+    Supports both horizontal (y fixed, x varies) and vertical (x fixed, y varies)
+    layouts.
+
     Args:
         rule: Text line rule.
         id_prefix: Prefix for element IDs.
@@ -425,17 +496,18 @@ def create_text_group(
     group.set("id", rule.name)
     group.set(f"{{{inkscape_ns}}}label", rule.name)
 
-    # Initialize result
+    # Initialize result with axis-agnostic structure
     result = GroupAddResult(
         group_name=rule.name,
-        y=rule.y,
-        x_start=rule.x_start,
-        x_end=rule.x_end,
-        x_interval=rule.x_interval,
+        fixed_axis="x" if rule.is_vertical else "y",
+        fixed_value=rule.fixed_coord,
+        start=rule.start_coord,
+        end=rule.end_coord,
+        interval=rule.interval,
     )
 
-    # Generate grid positions
-    positions = generate_grid_positions(rule.x_start, rule.x_end, rule.x_interval)
+    # Generate grid positions on the varying axis
+    positions = generate_grid_positions(rule.start_coord, rule.end_coord, rule.interval)
 
     # Indentation for child elements
     child_indent = indent * (base_indent + 1)
@@ -443,7 +515,7 @@ def create_text_group(
 
     # Create text elements
     elements_created = []
-    for i, x_pos in enumerate(positions):
+    for i, pos in enumerate(positions):
         index = rule.format.start + i
 
         try:
@@ -454,9 +526,17 @@ def create_text_group(
 
         element_id = f"{id_prefix}-{i + 1}"
 
+        # Determine coordinates based on layout direction
+        if rule.is_vertical:
+            grid_x = rule.fixed_coord  # x is fixed
+            grid_y = pos  # y varies
+        else:
+            grid_x = pos  # x varies
+            grid_y = rule.fixed_coord  # y is fixed
+
         elem, info = create_text_element(
-            grid_x_mm=x_pos,
-            grid_y_mm=rule.y,
+            grid_x_mm=grid_x,
+            grid_y_mm=grid_y,
             text=label,
             font=rule.font,
             element_id=element_id,
@@ -501,17 +581,43 @@ def parse_add_text_rule_file(rule_path: Path) -> AddTextRule:
 
     groups: list[TextLineRule] = []
     for group_data in data.get("groups", []):
-        # Required fields
+        # Required field: name
         if "name" not in group_data:
             raise ValueError("Each group must have 'name' field")
-        if "y" not in group_data:
-            raise ValueError("Each group must have 'y' field")
-        if "x_start" not in group_data:
-            raise ValueError("Each group must have 'x_start' field")
-        if "x_end" not in group_data:
-            raise ValueError("Each group must have 'x_end' field")
-        if "x_interval" not in group_data:
-            raise ValueError("Each group must have 'x_interval' field")
+
+        # Determine layout direction based on present fields
+        has_horizontal = "y" in group_data and "x_start" in group_data
+        has_vertical = "x" in group_data and "y_start" in group_data
+
+        if has_horizontal and has_vertical:
+            raise ValueError(
+                f"Group '{group_data['name']}': Cannot specify both horizontal "
+                "(y, x_start, x_end, x_interval) and vertical "
+                "(x, y_start, y_end, y_interval) layout fields"
+            )
+
+        if not has_horizontal and not has_vertical:
+            raise ValueError(
+                f"Group '{group_data['name']}': Must specify either horizontal "
+                "(y, x_start, x_end, x_interval) or vertical "
+                "(x, y_start, y_end, y_interval) layout fields"
+            )
+
+        # Validate required fields for the chosen layout
+        if has_horizontal:
+            for field in ["y", "x_start", "x_end", "x_interval"]:
+                if field not in group_data:
+                    raise ValueError(
+                        f"Group '{group_data['name']}': Horizontal layout requires "
+                        f"'{field}' field"
+                    )
+        else:  # has_vertical
+            for field in ["x", "y_start", "y_end", "y_interval"]:
+                if field not in group_data:
+                    raise ValueError(
+                        f"Group '{group_data['name']}': Vertical layout requires "
+                        f"'{field}' field"
+                    )
 
         # Font (optional)
         font = FontConfig()
@@ -547,17 +653,31 @@ def parse_add_text_rule_file(rule_path: Path) -> AddTextRule:
             if fmt.type == "custom" and not fmt.custom:
                 raise ValueError("format.custom is required when type is 'custom'")
 
-        groups.append(
-            TextLineRule(
-                name=group_data["name"],
-                y=float(group_data["y"]),
-                x_start=float(group_data["x_start"]),
-                x_end=float(group_data["x_end"]),
-                x_interval=float(group_data["x_interval"]),
-                font=font,
-                format=fmt,
+        # Build TextLineRule with appropriate fields
+        if has_horizontal:
+            groups.append(
+                TextLineRule(
+                    name=group_data["name"],
+                    font=font,
+                    format=fmt,
+                    y=float(group_data["y"]),
+                    x_start=float(group_data["x_start"]),
+                    x_end=float(group_data["x_end"]),
+                    x_interval=float(group_data["x_interval"]),
+                )
             )
-        )
+        else:  # has_vertical
+            groups.append(
+                TextLineRule(
+                    name=group_data["name"],
+                    font=font,
+                    format=fmt,
+                    x=float(group_data["x"]),
+                    y_start=float(group_data["y_start"]),
+                    y_end=float(group_data["y_end"]),
+                    y_interval=float(group_data["y_interval"]),
+                )
+            )
 
     return AddTextRule(groups=groups)
 
@@ -614,11 +734,25 @@ def format_add_text_report(report: AddTextReport) -> str:
 
     for group_result in report.group_results:
         lines.append(f"Group: {group_result.group_name}")
-        lines.append(f"  Y: {group_result.y:.2f} mm")
-        lines.append(
-            f"  X range: {group_result.x_start:.2f} - {group_result.x_end:.2f} mm"
-        )
-        lines.append(f"  X interval: {group_result.x_interval:.2f} mm")
+
+        # Display layout info based on direction
+        if group_result.is_vertical:
+            # Vertical layout: x fixed, y varies
+            lines.append(f"  Layout: vertical (X fixed)")
+            lines.append(f"  X: {group_result.fixed_value:.2f} mm")
+            lines.append(
+                f"  Y range: {group_result.start:.2f} - {group_result.end:.2f} mm"
+            )
+            lines.append(f"  Y interval: {group_result.interval:.2f} mm")
+        else:
+            # Horizontal layout: y fixed, x varies
+            lines.append(f"  Layout: horizontal (Y fixed)")
+            lines.append(f"  Y: {group_result.fixed_value:.2f} mm")
+            lines.append(
+                f"  X range: {group_result.start:.2f} - {group_result.end:.2f} mm"
+            )
+            lines.append(f"  X interval: {group_result.interval:.2f} mm")
+
         lines.append(f"  Elements: {group_result.element_count}")
         lines.append("")
 
