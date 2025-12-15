@@ -56,6 +56,8 @@ groups:
     x_end: <終了x座標>            # 終了X座標（mm）
     x_interval: <x間隔>           # X間隔（mm）
 
+    align: <配置モード>           # bbox_center | baseline_center（省略可、デフォルト: bbox_center）
+
     font:                         # フォント設定（省略可）
       family: "<フォント名>"       # フォントファミリー、デフォルト: "Noto Sans CJK JP"
       size: <サイズ>              # フォントサイズ（mm）、デフォルト: 1.0
@@ -73,6 +75,7 @@ groups:
     y_start: <開始y座標>          # 開始Y座標（mm）
     y_end: <終了y座標>            # 終了Y座標（mm）
     y_interval: <y間隔>           # Y間隔（mm）
+    align: ...                    # 上記と同じ
     font: ...                     # 上記と同じ
     format: ...                   # 上記と同じ
 ```
@@ -90,12 +93,13 @@ groups:
 
 ```yaml
 groups:
-  # 横配置の例（列ラベル）
+  # 横配置の例（列ラベル、bounding box中心配置）
   - name: "col-labels"
     y: 2.54
     x_start: 5.08
     x_end: 78.74
     x_interval: 2.54
+    align: bbox_center  # bounding boxの中心をグリッドに配置
     font:
       family: "Noto Sans CJK JP"
       size: 1.4   # mm
@@ -105,12 +109,13 @@ groups:
       padding: 0
       start: 1
 
-  # 横配置の例（単一位置）
+  # 横配置の例（ベースライン配置）
   - name: "row-labels-left"
     y: 5.08
     x_start: 2.54
     x_end: 2.54
     x_interval: 2.54
+    align: baseline_center  # ベースラインをグリッドY座標に配置
     format:
       type: letter
       start: 1
@@ -145,7 +150,14 @@ groups:
 ### 4.1 座標系
 
 - すべての座標はミリメートル（mm）単位
-- テキストのバウンディングボックス中心がグリッド位置に配置される
+- テキストの配置はalignモードで制御される
+
+### 4.1.1 配置モード（align）
+
+| モード | X方向 | Y方向 | 用途 |
+|--------|-------|-------|------|
+| `bbox_center`（デフォルト） | テキスト幅の中心をグリッドに配置 | bounding box高さの中心をグリッドに配置 | グリッド穴の中心にラベルを配置 |
+| `baseline_center` | テキスト幅の中心をグリッドに配置 | ベースラインをグリッドY座標に配置 | 水平線の上にラベルを配置 |
 
 **横配置（Horizontal）の場合：**
 - グリッド位置は`x_start`から`x_end`まで`x_interval`刻みで計算
@@ -348,6 +360,7 @@ Summary:
 
 | パラメータ | デフォルト値 | 説明 |
 |-----------|-------------|------|
+| `align` | "bbox_center" | 配置モード |
 | `font.family` | "Noto Sans CJK JP" | フォントファミリー |
 | `font.size` | 1.0 | フォントサイズ（mm） |
 | `font.color` | "#000000" | 文字色 |

@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from svg_tools.utils import SVG_NAMESPACES
 from svg_tools.add_text import (
+    AlignType,
     FontConfig,
     TextFormatConfig,
     TextLineRule,
@@ -130,6 +131,29 @@ class TestTextLineRule:
         assert rule.font.family == "Arial"
         assert rule.font.size == 10.0
         assert rule.format.type == "letter_upper"
+
+    def test_default_align(self):
+        """Test default align is bbox_center."""
+        rule = TextLineRule(
+            name="labels",
+            y=2.54,
+            x_start=5.08,
+            x_end=20.32,
+            x_interval=2.54,
+        )
+        assert rule.align == "bbox_center"
+
+    def test_custom_align(self):
+        """Test custom align value."""
+        rule = TextLineRule(
+            name="labels",
+            y=2.54,
+            x_start=5.08,
+            x_end=20.32,
+            x_interval=2.54,
+            align="baseline_center",
+        )
+        assert rule.align == "baseline_center"
 
 
 class TestGroupAddResult:
@@ -283,6 +307,26 @@ class TestCalculateTextOffset:
         assert offset_x == pytest.approx(-3.0)
         assert offset_y == pytest.approx(4.0)
 
+    def test_baseline_center_align(self):
+        """Test baseline_center alignment mode."""
+        offset_x, offset_y = calculate_text_offset_estimated(
+            10.0, "1", align="baseline_center"
+        )
+        # Width estimate: 1 * 10 * 0.50 = 5.0
+        # offset_x = -5.0/2 = -2.5
+        # offset_y = 0 (baseline at grid Y)
+        assert offset_x == pytest.approx(-2.5)
+        assert offset_y == pytest.approx(0)
+
+    def test_bbox_center_align_explicit(self):
+        """Test explicit bbox_center alignment mode."""
+        offset_x, offset_y = calculate_text_offset_estimated(
+            10.0, "1", align="bbox_center"
+        )
+        # Same as default behavior
+        assert offset_x == pytest.approx(-2.5)
+        assert offset_y == pytest.approx(3.75)
+
 
 class TestGenerateGridPositions:
     """Tests for generate_grid_positions function."""
@@ -394,6 +438,23 @@ class TestCreateTextElement:
 
         # y should be positive (shifted down from center for baseline)
         assert y > 0
+
+    def test_element_baseline_center_align(self):
+        """Test element creation with baseline_center alignment."""
+        font = FontConfig(size=10.0)
+        elem, info = create_text_element(
+            5.0, 10.0, "1", font, "text-1", align="baseline_center"
+        )
+
+        # At grid (5.0, 10.0), text should be horizontally centered
+        x = float(elem.get("x"))
+        y = float(elem.get("y"))
+
+        # x should be shifted left from grid center
+        assert x < 5.0
+
+        # y should be exactly at grid Y (baseline at grid Y)
+        assert y == pytest.approx(10.0)
 
 
 class TestCreateTextGroup:
@@ -833,6 +894,80 @@ groups:
         """Test error when neither horizontal nor vertical fields specified."""
         with pytest.raises(ValueError, match="Must specify either"):
             parse_add_text_rule_file(invalid_no_layout_file)
+
+    @pytest.fixture
+    def align_rule_file(self, tmp_path) -> Path:
+        """Create a rule file with align field."""
+        content = """
+groups:
+  - name: "bbox-labels"
+    y: 2.54
+    x_start: 0.0
+    x_end: 5.08
+    x_interval: 2.54
+    align: bbox_center
+
+  - name: "baseline-labels"
+    y: 5.08
+    x_start: 0.0
+    x_end: 5.08
+    x_interval: 2.54
+    align: baseline_center
+"""
+        rule_file = tmp_path / "align.yaml"
+        rule_file.write_text(content)
+        return rule_file
+
+    def test_parse_align_field(self, align_rule_file):
+        """Test parsing align field."""
+        rule = parse_add_text_rule_file(align_rule_file)
+
+        assert len(rule.groups) == 2
+        assert rule.groups[0].align == "bbox_center"
+        assert rule.groups[1].align == "baseline_center"
+
+    @pytest.fixture
+    def default_align_rule_file(self, tmp_path) -> Path:
+        """Create a rule file without align field (should use default)."""
+        content = """
+groups:
+  - name: "labels"
+    y: 2.54
+    x_start: 0.0
+    x_end: 5.08
+    x_interval: 2.54
+"""
+        rule_file = tmp_path / "default_align.yaml"
+        rule_file.write_text(content)
+        return rule_file
+
+    def test_parse_default_align(self, default_align_rule_file):
+        """Test default align value when not specified."""
+        rule = parse_add_text_rule_file(default_align_rule_file)
+
+        assert len(rule.groups) == 1
+        assert rule.groups[0].align == "bbox_center"
+
+    @pytest.fixture
+    def invalid_align_rule_file(self, tmp_path) -> Path:
+        """Create a rule file with invalid align value."""
+        content = """
+groups:
+  - name: "labels"
+    y: 2.54
+    x_start: 0.0
+    x_end: 5.08
+    x_interval: 2.54
+    align: invalid_value
+"""
+        rule_file = tmp_path / "invalid_align.yaml"
+        rule_file.write_text(content)
+        return rule_file
+
+    def test_parse_invalid_align(self, invalid_align_rule_file):
+        """Test error when invalid align value is specified."""
+        with pytest.raises(ValueError, match="Invalid align value"):
+            parse_add_text_rule_file(invalid_align_rule_file)
 
 
 class TestAddTextToSvg:

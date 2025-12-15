@@ -1,0 +1,18 @@
+# Breadboard SVG adding text rules
+# Target: svg-test1-breadboard1.svg
+
+groups:
+  - name: "s-text-1"
+    y: 2.54
+    x_start: 12.7
+    x_end: 40.64
+    x_interval: 2.54
+    align: baseline_center
+    font:
+        family: "Noto Sans CJK JP"
+        size: 1.6  # mm
+        color: "#ccccccff"
+    format:
+      type: custom
+      custom: [a, b, c, d, e, ' ', ' ', f, g, h, i, j]
+

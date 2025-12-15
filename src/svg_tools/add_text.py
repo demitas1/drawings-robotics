@@ -8,6 +8,9 @@ from typing import Literal
 
 # Layout direction type
 LayoutDirection = Literal["horizontal", "vertical"]
+
+# Alignment type for text positioning
+AlignType = Literal["bbox_center", "baseline_center"]
 from xml.etree import ElementTree as ET
 
 import freetype
@@ -54,6 +57,7 @@ class TextLineRule:
     name: str  # Group name to create
     font: FontConfig = field(default_factory=FontConfig)
     format: TextFormatConfig = field(default_factory=TextFormatConfig)
+    align: AlignType = "bbox_center"  # Text alignment mode
 
     # Horizontal layout (y fixed, x varies)
     y: float | None = None  # Fixed Y coordinate (mm)
@@ -287,13 +291,15 @@ def calculate_text_offset_freetype(
     font_family: str,
     font_size_mm: float,
     text: str,
+    align: AlignType = "bbox_center",
 ) -> tuple[float, float]:
-    """Calculate offset to center text bounding box using FreeType.
+    """Calculate offset to position text using FreeType.
 
     Args:
         font_family: Font family name.
         font_size_mm: Font size in mm.
         text: Text content.
+        align: Alignment mode - "bbox_center" or "baseline_center".
 
     Returns:
         Tuple of (offset_x, offset_y) in mm.
@@ -302,12 +308,12 @@ def calculate_text_offset_freetype(
     font_path = find_font_file(font_family)
     if font_path is None:
         # Fallback to estimation if font not found
-        return calculate_text_offset_estimated(font_size_mm, text)
+        return calculate_text_offset_estimated(font_size_mm, text, align)
 
     try:
         face = load_font_face(font_path)
     except Exception:
-        return calculate_text_offset_estimated(font_size_mm, text)
+        return calculate_text_offset_estimated(font_size_mm, text, align)
 
     # Measure at large size for accuracy
     extents = get_text_extents_freetype(face, text, MEASURE_FONT_SIZE_PT)
@@ -321,13 +327,19 @@ def calculate_text_offset_freetype(
 
     # Calculate offset for centering
     # Text origin (x,y) is at baseline left
-    # To center bbox at grid point:
+    # X direction: center text width at grid point (common for both modes)
     #   grid_x = text_x + x_bearing + width/2
     #   text_x = grid_x - x_bearing - width/2
     #   offset_x = text_x - grid_x = -(x_bearing + width/2)
-    # Result is in target px, then convert to mm
     offset_x_px = -(extents.x_bearing + extents.width / 2) * scale
-    offset_y_px = -(extents.y_bearing + extents.height / 2) * scale
+
+    # Y direction: depends on alignment mode
+    if align == "baseline_center":
+        # Place baseline at grid Y coordinate
+        offset_y_px = 0
+    else:  # bbox_center
+        # Center bbox vertically at grid point
+        offset_y_px = -(extents.y_bearing + extents.height / 2) * scale
 
     # Convert px to mm
     offset_x_mm = offset_x_px * 25.4 / 96
@@ -339,6 +351,7 @@ def calculate_text_offset_freetype(
 def calculate_text_offset_estimated(
     font_size_mm: float,
     text: str,
+    align: AlignType = "bbox_center",
     cap_height_ratio: float = 0.75,
     char_width_ratio: float = 0.50,
 ) -> tuple[float, float]:
@@ -347,6 +360,7 @@ def calculate_text_offset_estimated(
     Args:
         font_size_mm: Font size in mm.
         text: Text content.
+        align: Alignment mode - "bbox_center" or "baseline_center".
         cap_height_ratio: Cap height as ratio of font size.
         char_width_ratio: Character width as ratio of font size.
 
@@ -357,7 +371,13 @@ def calculate_text_offset_estimated(
     cap_height = font_size_mm * cap_height_ratio
 
     offset_x = -text_width / 2
-    offset_y = cap_height / 2
+
+    if align == "baseline_center":
+        # Place baseline at grid Y coordinate
+        offset_y = 0
+    else:  # bbox_center
+        # Center cap height vertically at grid point
+        offset_y = cap_height / 2
 
     return (offset_x, offset_y)
 
@@ -368,8 +388,9 @@ def create_text_element(
     text: str,
     font: FontConfig,
     element_id: str,
+    align: AlignType = "bbox_center",
 ) -> tuple[ET.Element, TextElementInfo]:
-    """Create a text element centered at grid position.
+    """Create a text element positioned at grid position.
 
     All coordinates and font size are in mm units.
 
@@ -379,13 +400,14 @@ def create_text_element(
         text: Text content.
         font: Font configuration (size in mm).
         element_id: ID for the element.
+        align: Alignment mode - "bbox_center" or "baseline_center".
 
     Returns:
         Tuple of (ET.Element, TextElementInfo).
     """
     # Calculate offset using FreeType
     offset_x_mm, offset_y_mm = calculate_text_offset_freetype(
-        font.family, font.size, text
+        font.family, font.size, text, align
     )
 
     # Calculate final text position in mm
@@ -540,6 +562,7 @@ def create_text_group(
             text=label,
             font=rule.font,
             element_id=element_id,
+            align=rule.align,
         )
 
         elements_created.append(elem)
@@ -653,6 +676,17 @@ def parse_add_text_rule_file(rule_path: Path) -> AddTextRule:
             if fmt.type == "custom" and not fmt.custom:
                 raise ValueError("format.custom is required when type is 'custom'")
 
+        # Align (optional)
+        align: AlignType = "bbox_center"
+        if "align" in group_data:
+            align_val = group_data["align"]
+            if align_val not in ("bbox_center", "baseline_center"):
+                raise ValueError(
+                    f"Group '{group_data['name']}': Invalid align value: {align_val}. "
+                    "Must be 'bbox_center' or 'baseline_center'"
+                )
+            align = align_val
+
         # Build TextLineRule with appropriate fields
         if has_horizontal:
             groups.append(
@@ -660,6 +694,7 @@ def parse_add_text_rule_file(rule_path: Path) -> AddTextRule:
                     name=group_data["name"],
                     font=font,
                     format=fmt,
+                    align=align,
                     y=float(group_data["y"]),
                     x_start=float(group_data["x_start"]),
                     x_end=float(group_data["x_end"]),
@@ -672,6 +707,7 @@ def parse_add_text_rule_file(rule_path: Path) -> AddTextRule:
                     name=group_data["name"],
                     font=font,
                     format=fmt,
+                    align=align,
                     x=float(group_data["x"]),
                     y_start=float(group_data["y_start"]),
                     y_end=float(group_data["y_end"]),
