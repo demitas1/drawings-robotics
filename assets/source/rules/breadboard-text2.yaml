@@ -15,4 +15,31 @@ groups:
     format:
       type: custom
       custom: [a, b, c, d, e, ' ', ' ', f, g, h, i, j]
-
+  - name: "s-text-2"
+    x: 10.16
+    y_start: 5.08
+    y_end: 78.74
+    y_interval: 2.54
+    align: bbox_center
+    font:
+        family: "Noto Sans CJK JP"
+        size: 1.4  # mm
+        color: "#ccccccff"
+    format:
+      type: number
+      padding: 0
+      start: 1
+  - name: "s-text-3"
+    x: 43.18
+    y_start: 5.08
+    y_end: 78.74
+    y_interval: 2.54
+    align: bbox_center
+    font:
+        family: "Noto Sans CJK JP"
+        size: 1.4  # mm
+        color: "#ccccccff"
+    format:
+      type: number
+      padding: 0
+      start: 1
