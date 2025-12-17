@@ -718,6 +718,44 @@ def parse_add_text_rule_file(rule_path: Path) -> AddTextRule:
     return AddTextRule(groups=groups)
 
 
+def add_text_to_svg_tree(
+    tree: ET.ElementTree,
+    rule: AddTextRule,
+    apply: bool = False,
+) -> AddTextReport:
+    """Add text elements to an existing ElementTree.
+
+    Args:
+        tree: ElementTree to process (modified in-place if apply=True).
+        rule: Add text rules.
+        apply: Whether to apply changes to the SVG.
+
+    Returns:
+        AddTextReport with results.
+
+    Note:
+        The file_path in the returned report will be empty Path("").
+        Callers should set it if needed.
+    """
+    root = tree.getroot()
+    report = AddTextReport(file_path=Path(""))
+
+    for i, group_rule in enumerate(rule.groups):
+        # Use group name as ID prefix
+        id_prefix = f"{group_rule.name}-text"
+
+        # base_indent=0 for root-level groups, child elements get indent level 1
+        group_elem, group_result = create_text_group(
+            group_rule, id_prefix, indent="  ", base_indent=0
+        )
+        report.group_results.append(group_result)
+
+        if apply and not group_result.has_errors:
+            root.append(group_elem)
+
+    return report
+
+
 def add_text_to_svg(
     svg_path: Path,
     rule: AddTextRule,
@@ -735,23 +773,8 @@ def add_text_to_svg(
     """
     register_namespaces()
     tree = ET.parse(svg_path)
-    root = tree.getroot()
-
-    report = AddTextReport(file_path=svg_path)
-
-    for i, group_rule in enumerate(rule.groups):
-        # Use group name as ID prefix
-        id_prefix = f"{group_rule.name}-text"
-
-        # base_indent=0 for root-level groups, child elements get indent level 1
-        group_elem, group_result = create_text_group(
-            group_rule, id_prefix, indent="  ", base_indent=0
-        )
-        report.group_results.append(group_result)
-
-        if apply and not group_result.has_errors:
-            root.append(group_elem)
-
+    report = add_text_to_svg_tree(tree, rule, apply)
+    report.file_path = svg_path
     return tree, report
 
 

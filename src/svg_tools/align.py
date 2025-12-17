@@ -814,6 +814,37 @@ def validate_and_fix_group(
     return result
 
 
+def validate_svg_tree(
+    tree: ET.ElementTree,
+    rule: AlignmentRule,
+    fix: bool = False,
+) -> AlignmentReport:
+    """Validate an existing ElementTree against alignment rules.
+
+    Args:
+        tree: ElementTree to validate (modified in-place if fix=True).
+        rule: Alignment rules.
+        fix: Whether to fix fixable issues.
+
+    Returns:
+        AlignmentReport with validation results.
+
+    Note:
+        The file_path in the returned report will be empty Path("").
+        Callers should set it if needed.
+    """
+    root = tree.getroot()
+    report = AlignmentReport(file_path=Path(""))
+
+    for group_rule in rule.groups:
+        group_result = validate_and_fix_group(
+            root, group_rule, rule.tolerance, fix=fix
+        )
+        report.group_results.append(group_result)
+
+    return report
+
+
 def validate_svg(
     svg_path: Path,
     rule: AlignmentRule,
@@ -831,16 +862,8 @@ def validate_svg(
     """
     register_namespaces()
     tree = ET.parse(svg_path)
-    root = tree.getroot()
-
-    report = AlignmentReport(file_path=svg_path)
-
-    for group_rule in rule.groups:
-        group_result = validate_and_fix_group(
-            root, group_rule, rule.tolerance, fix=fix
-        )
-        report.group_results.append(group_result)
-
+    report = validate_svg_tree(tree, rule, fix)
+    report.file_path = svg_path
     return tree, report
 
 

@@ -740,6 +740,35 @@ def relabel_group(
     return result
 
 
+def relabel_svg_tree(
+    tree: ET.ElementTree,
+    rule: RelabelRule,
+    apply: bool = False,
+) -> RelabelReport:
+    """Relabel shapes in an existing ElementTree.
+
+    Args:
+        tree: ElementTree to process (modified in-place if apply=True).
+        rule: Relabel rules.
+        apply: Whether to apply changes to the SVG.
+
+    Returns:
+        RelabelReport with changes and any warnings/errors.
+
+    Note:
+        The file_path in the returned report will be empty Path("").
+        Callers should set it if needed.
+    """
+    root = tree.getroot()
+    report = RelabelReport(file_path=Path(""))
+
+    for group_rule in rule.groups:
+        group_result = relabel_group(root, group_rule, apply=apply)
+        report.group_results.append(group_result)
+
+    return report
+
+
 def relabel_svg(
     svg_path: Path,
     rule: RelabelRule,
@@ -757,14 +786,8 @@ def relabel_svg(
     """
     register_namespaces()
     tree = ET.parse(svg_path)
-    root = tree.getroot()
-
-    report = RelabelReport(file_path=svg_path)
-
-    for group_rule in rule.groups:
-        group_result = relabel_group(root, group_rule, apply=apply)
-        report.group_results.append(group_result)
-
+    report = relabel_svg_tree(tree, rule, apply)
+    report.file_path = svg_path
     return tree, report
 
 

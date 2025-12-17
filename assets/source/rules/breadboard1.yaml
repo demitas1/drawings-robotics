@@ -1,0 +1,135 @@
+# Breadboard SVG unified processing rules
+# Target: svg-test1-breadboard1.svg
+#
+# Usage:
+#   ./venv/bin/python scripts/svg_process.py assets/source/breadboard.svg \
+#       --rule assets/source/rules/breadboard.yaml \
+#       --output assets/normalized/breadboard.svg
+
+# Step 1: Align - Validate and fix shape alignments
+align:
+  groups:
+    - name: "s-rect"
+      shape: rect
+      grid:
+        x: 1.27
+        y: 1.27
+      size:
+        width: 1.27
+        height: 1.27
+
+    - name: "s-circle"
+      shape: arc
+      grid:
+        x: 1.27
+        y: 1.27
+      size:
+        width: 0.635
+        height: 0.635
+      arc:
+        start: 0
+        end: 6.2831853  # 2 * pi
+
+    - name: "connection"
+      shape: path
+      grid:
+        x: 1.27
+        y: 1.27
+
+  tolerance:
+    acceptable: 0.001      # 0.001mm or 0.001rad
+    error_threshold: 0.1   # 10%
+
+# Step 2: Relabel - Assign coordinate-based labels
+relabel:
+  groups:
+    - name: "s-circle"
+      shape: arc
+      label_template: "hole-{x}-{y}"
+      grid:
+        x: 2.54    # Standard 0.1" pitch
+        y: 2.54
+      axis:
+        x_direction: positive
+        y_direction: positive
+      index:
+        x_start: 1
+        y_start: 1
+      format:
+        x_type: number
+        y_type: custom
+        custom_y: [a, b, c, d, e, f, _, _, g, h, i, j, k, l, _, _, mi, pl]
+        x_padding: 0
+      sort:
+        by: y_then_x
+        x_order: ascending
+        y_order: ascending
+
+    - name: "s-rect"
+      shape: rect
+      label_template: "pad-{x}-{y}"
+      grid:
+        x: 2.54
+        y: 2.54
+      axis:
+        x_direction: positive
+        y_direction: positive
+      index:
+        x_start: 1
+        y_start: 1
+      format:
+        x_type: number
+        y_type: custom
+        custom_y: [a, b, c, d, e, f, _, _, g, h, i, j, k, l, _, _, mi, pl]
+        x_padding: 0
+      sort:
+        by: y_then_x
+        x_order: ascending
+        y_order: ascending
+
+# Step 3: Add text - Generate text labels
+add_text:
+  groups:
+    # Top column numbers
+    - name: "s-text-1"
+      y: 2.54
+      x_start: 5.08
+      x_end: 78.74
+      x_interval: 2.54
+      font:
+        family: "Noto Sans CJK JP"
+        size: 1.4  # mm
+        color: "#0000ff"
+      format:
+        type: number
+        padding: 0
+        start: 1
+
+    # Bottom column numbers
+    - name: "s-text-2"
+      y: 40.64
+      x_start: 5.08
+      x_end: 78.74
+      x_interval: 2.54
+      font:
+        family: "Noto Sans CJK JP"
+        size: 1.4
+        color: "#0000ff"
+      format:
+        type: number
+        padding: 0
+        start: 1
+
+    # Left row labels
+    - name: "s-text-3"
+      x: 2.54
+      y_start: 5.08
+      y_end: 38.1
+      y_interval: 2.54
+      font:
+        family: "Noto Sans CJK JP"
+        size: 1.4
+        color: "#0000ff"
+      format:
+        type: custom
+        custom: [a, b, c, d, e, f, ' ', ' ', g, h, i, j, k, l]
