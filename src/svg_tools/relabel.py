@@ -14,7 +14,7 @@ from .geometry import (
     parse_rect,
 )
 from .utils import (
-    find_group_by_label,
+    find_all_groups_by_label,
     get_element_label,
     register_namespaces,
     set_element_label,
@@ -626,7 +626,7 @@ def relabel_group(
     Returns:
         GroupRelabelResult with changes and any warnings/errors.
     """
-    group = find_group_by_label(root, rule.name)
+    groups = find_all_groups_by_label(root, rule.name)
 
     # Initialize result with default origin
     result = GroupRelabelResult(
@@ -637,22 +637,35 @@ def relabel_group(
         sort=rule.sort if rule.sort.by != "none" else None,
     )
 
-    if group is None:
+    if not groups:
         result.warnings.append(f"Group '{rule.name}' not found in SVG")
         return result
 
-    # Collect all shapes
+    # Process each matching group independently
+    for group in groups:
+        _relabel_single_group(group, rule, result, apply)
+
+    return result
+
+
+def _relabel_single_group(
+    group: ET.Element,
+    rule: "RelabelGroupRule",
+    result: "GroupRelabelResult",
+    apply: bool,
+) -> None:
+    """Relabel shapes in a single group element, accumulating into result."""
     shapes = list(iter_shapes_in_group(group, rule.shape))
 
     if not shapes:
         result.warnings.append(f"No {rule.shape} shapes found in group '{rule.name}'")
-        return result
+        return
 
     # Sort shapes if configured
     shapes = sort_shapes(shapes, rule.sort)
 
     if not shapes:
-        return result
+        return
 
     # Determine origin
     if rule.origin:
@@ -660,11 +673,14 @@ def relabel_group(
     else:
         origin = calculate_auto_origin(shapes)
 
-    result.origin = origin
+    # Set origin from first processed group
+    if result.origin == (0.0, 0.0):
+        result.origin = origin
 
     # Check for off-grid elements and calculate labels
     label_map: dict[str, list[str]] = {}  # label -> [element_ids]
     off_grid_threshold = min(rule.grid.x, rule.grid.y) * 0.5
+    group_changes: list["LabelChange"] = []
 
     for shape in shapes:
         center = shape.center
@@ -699,13 +715,12 @@ def relabel_group(
             )
             continue
 
-        # Track for duplicate detection
+        # Track for duplicate detection within this group
         if new_label not in label_map:
             label_map[new_label] = []
         label_map[new_label].append(shape.id)
 
-        # Record change
-        result.changes.append(
+        group_changes.append(
             LabelChange(
                 element_id=shape.id,
                 old_label=old_label,
@@ -717,17 +732,18 @@ def relabel_group(
             )
         )
 
-    # Check for duplicates
+    # Check for duplicates within this group
     for label, element_ids in label_map.items():
         if len(element_ids) > 1:
             result.errors.append(
                 f"Duplicate label '{label}' would be assigned to: {', '.join(element_ids)}"
             )
 
-    # Apply changes if no errors and apply is True
+    result.changes.extend(group_changes)
+
+    # Apply changes for this group if no errors and apply is True
     if apply and not result.has_errors:
-        for change in result.changes:
-            # Find the element and update its label
+        for change in group_changes:
             for shape in shapes:
                 if shape.id == change.element_id:
                     set_element_label(shape.element, change.new_label)
@@ -736,8 +752,6 @@ def relabel_group(
         # Reorder elements in the group if sorting is enabled
         if rule.sort.by != "none":
             reorder_elements_in_group(group, shapes)
-
-    return result
 
 
 def relabel_svg_tree(

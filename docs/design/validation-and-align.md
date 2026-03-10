@@ -108,6 +108,7 @@ tolerance:
 
 - `inkscape:label`属性でグループを識別する
 - ネストされたグループも検索対象とする
+- ルールの `name` に完全一致するグループに加え、Inkscapeが重複レイヤーに自動付与する連番パターン（`name N`）のグループも対象とする（例: `s-circle` → `s-circle`, `s-circle 1`, `s-circle 2` すべてに適用）
 
 ### 4.3 位置の基準点
 

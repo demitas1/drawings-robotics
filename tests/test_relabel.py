@@ -817,6 +817,127 @@ class TestRelabelGroup:
         assert any("Duplicate" in e for e in result.errors)
 
 
+class TestRelabelGroupMultiple:
+    """Tests for relabel_group with multiple groups sharing a base label."""
+
+    def _create_svg_with_duplicate_groups(self) -> ET.Element:
+        """Create SVG with 's-rect' and 's-rect 1' groups, each with 2 rects."""
+        svg_ns = SVG_NAMESPACES["svg"]
+        inkscape_ns = SVG_NAMESPACES["inkscape"]
+
+        root = ET.Element(f"{{{svg_ns}}}svg")
+
+        # First group: 2 rects at x=0,1 y=0
+        g1 = ET.SubElement(root, f"{{{svg_ns}}}g", {f"{{{inkscape_ns}}}label": "shapes"})
+        for col in range(2):
+            ET.SubElement(
+                g1,
+                f"{{{svg_ns}}}rect",
+                {
+                    "id": f"g1-rect-{col}",
+                    "x": str(col * 2.54),
+                    "y": "0",
+                    "width": "1.0",
+                    "height": "1.0",
+                    f"{{{inkscape_ns}}}label": f"old-g1-{col}",
+                },
+            )
+
+        # Second group (Inkscape duplicate): 2 rects at x=0,1 y=5.08
+        g2 = ET.SubElement(root, f"{{{svg_ns}}}g", {f"{{{inkscape_ns}}}label": "shapes 1"})
+        for col in range(2):
+            ET.SubElement(
+                g2,
+                f"{{{svg_ns}}}rect",
+                {
+                    "id": f"g2-rect-{col}",
+                    "x": str(col * 2.54),
+                    "y": "5.08",
+                    "width": "1.0",
+                    "height": "1.0",
+                    f"{{{inkscape_ns}}}label": f"old-g2-{col}",
+                },
+            )
+
+        return root
+
+    def test_all_groups_produce_changes(self):
+        root = self._create_svg_with_duplicate_groups()
+        rule = RelabelGroupRule(
+            name="shapes",
+            shape="rect",
+            label_template="pad-{x}{y}",
+            grid=GridConfig(x=2.54, y=2.54),
+            format=FormatConfig(x_type="letter_upper", y_type="number"),
+        )
+
+        result = relabel_group(root, rule, apply=False)
+
+        # Both groups combined: 4 rects total
+        assert len(result.changes) == 4
+        assert result.has_errors is False
+
+    def test_each_group_labeled_independently(self):
+        root = self._create_svg_with_duplicate_groups()
+        rule = RelabelGroupRule(
+            name="shapes",
+            shape="rect",
+            label_template="pad-{x}{y}",
+            grid=GridConfig(x=2.54, y=2.54),
+            format=FormatConfig(x_type="letter_upper", y_type="number"),
+        )
+
+        result = relabel_group(root, rule, apply=True)
+
+        assert result.has_errors is False
+
+        # g1: origin at (0,0), g2: origin at (0,5.08)
+        # Both groups share x-indices 1,2 independently
+        inkscape_ns = SVG_NAMESPACES["inkscape"]
+        labels = {
+            elem.get("id"): elem.get(f"{{{inkscape_ns}}}label")
+            for elem in root.iter()
+            if elem.get("id") in {"g1-rect-0", "g1-rect-1", "g2-rect-0", "g2-rect-1"}
+        }
+        # Each group's y-index starts from 1 independently
+        assert labels["g1-rect-0"] == "pad-A1"
+        assert labels["g1-rect-1"] == "pad-B1"
+        assert labels["g2-rect-0"] == "pad-A1"
+        assert labels["g2-rect-1"] == "pad-B1"
+
+    def test_group_not_found_returns_warning(self):
+        svg_ns = SVG_NAMESPACES["svg"]
+        root = ET.Element(f"{{{svg_ns}}}svg")
+        rule = RelabelGroupRule(
+            name="nonexistent",
+            shape="rect",
+            label_template="{x}",
+            grid=GridConfig(x=2.54, y=2.54),
+            format=FormatConfig(x_type="number", y_type="number"),
+        )
+
+        result = relabel_group(root, rule, apply=False)
+
+        assert len(result.changes) == 0
+        assert any("not found" in w for w in result.warnings)
+
+    def test_no_duplicate_labels_across_groups(self):
+        # Labels in different groups can be identical — no cross-group dup error
+        root = self._create_svg_with_duplicate_groups()
+        rule = RelabelGroupRule(
+            name="shapes",
+            shape="rect",
+            label_template="hole-{x}",
+            grid=GridConfig(x=2.54, y=2.54),
+            format=FormatConfig(x_type="number", y_type="number"),
+        )
+
+        result = relabel_group(root, rule, apply=False)
+
+        # Same x-labels in both groups is expected and NOT an error
+        assert result.has_errors is False
+
+
 class TestRelabelSvg:
     """Tests for relabel_svg function."""
 

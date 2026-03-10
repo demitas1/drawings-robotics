@@ -24,7 +24,7 @@ from .geometry import (
     update_path,
     update_rect,
 )
-from .utils import find_group_by_label, register_namespaces
+from .utils import find_all_groups_by_label, register_namespaces
 
 # Default values
 DEFAULT_TOLERANCE = 0.001  # mm or rad
@@ -798,18 +798,19 @@ def validate_and_fix_group(
     Returns:
         Group validation result.
     """
-    group = find_group_by_label(root, rule.name)
+    groups = find_all_groups_by_label(root, rule.name)
     result = GroupValidationResult(group_name=rule.name, shape_type=rule.shape)
 
-    if group is None:
+    if not groups:
         return result
 
-    for info in iter_shapes_in_group(group, rule.shape):
-        validation = validate_shape(info, rule, tolerance)
-        result.element_results.append(validation)
+    for group in groups:
+        for info in iter_shapes_in_group(group, rule.shape):
+            validation = validate_shape(info, rule, tolerance)
+            result.element_results.append(validation)
 
-        if fix and validation.has_fixable and not validation.has_errors:
-            fix_shape(info, validation, rule)
+            if fix and validation.has_fixable and not validation.has_errors:
+                fix_shape(info, validation, rule)
 
     return result
 

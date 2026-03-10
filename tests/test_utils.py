@@ -19,6 +19,7 @@ from svg_tools.utils import (
     analyze_svg,
     iter_all_groups,
     parse_svg,
+    find_all_groups_by_label,
 )
 
 
@@ -295,6 +296,67 @@ class TestIterAllGroups:
 
         names = [g.name for g in iter_all_groups(stats)]
         assert names == ["layer1", "layer2"]
+
+
+class TestFindAllGroupsByLabel:
+    """Tests for find_all_groups_by_label function."""
+
+    def _make_root(self, *labels: str) -> ET.Element:
+        """Create an SVG root with groups for each label."""
+        svg_ns = SVG_NAMESPACES["svg"]
+        inkscape_ns = SVG_NAMESPACES["inkscape"]
+        root = ET.Element(f"{{{svg_ns}}}svg")
+        for label in labels:
+            ET.SubElement(root, f"{{{svg_ns}}}g", {f"{{{inkscape_ns}}}label": label})
+        return root
+
+    def test_find_single_exact_match(self):
+        root = self._make_root("s-circle", "s-rect")
+        result = find_all_groups_by_label(root, "s-circle")
+        assert len(result) == 1
+        assert result[0].get(f"{{{SVG_NAMESPACES['inkscape']}}}label") == "s-circle"
+
+    def test_find_inkscape_duplicate_suffix(self):
+        # Inkscape renames duplicate layers to "name N"
+        root = self._make_root("s-circle", "s-circle 1", "s-circle 2")
+        result = find_all_groups_by_label(root, "s-circle")
+        assert len(result) == 3
+
+    def test_find_only_numbered_duplicates(self):
+        root = self._make_root("s-circle 1", "s-circle 2")
+        result = find_all_groups_by_label(root, "s-circle")
+        assert len(result) == 2
+
+    def test_does_not_match_partial_prefix(self):
+        # "s-circle-extra" must NOT match "s-circle"
+        root = self._make_root("s-circle", "s-circle-extra", "s-circle1")
+        result = find_all_groups_by_label(root, "s-circle")
+        assert len(result) == 1
+        assert result[0].get(f"{{{SVG_NAMESPACES['inkscape']}}}label") == "s-circle"
+
+    def test_no_match_returns_empty_list(self):
+        root = self._make_root("s-rect", "connection")
+        result = find_all_groups_by_label(root, "s-circle")
+        assert result == []
+
+    def test_finds_nested_groups(self):
+        svg_ns = SVG_NAMESPACES["svg"]
+        inkscape_ns = SVG_NAMESPACES["inkscape"]
+        root = ET.Element(f"{{{svg_ns}}}svg")
+        layer = ET.SubElement(root, f"{{{svg_ns}}}g", {f"{{{inkscape_ns}}}label": "Layer 1"})
+        g1 = ET.SubElement(layer, f"{{{svg_ns}}}g", {f"{{{inkscape_ns}}}label": "s-circle"})
+        g2 = ET.SubElement(layer, f"{{{svg_ns}}}g", {f"{{{inkscape_ns}}}label": "s-circle 1"})
+
+        result = find_all_groups_by_label(root, "s-circle")
+        assert len(result) == 2
+        assert g1 in result
+        assert g2 in result
+
+    def test_returns_in_document_order(self):
+        root = self._make_root("s-circle 2", "s-circle", "s-circle 1")
+        result = find_all_groups_by_label(root, "s-circle")
+        labels = [g.get(f"{{{SVG_NAMESPACES['inkscape']}}}label") for g in result]
+        assert labels == ["s-circle 2", "s-circle", "s-circle 1"]
 
 
 class TestAnalyzeSvg:

@@ -159,6 +159,8 @@ tolerance:
   error_threshold: 0.1    # エラー閾値（10% = 0.1）
 ```
 
+> **注意**: `name` は `inkscape:label` の完全一致だけでなく、Inkscapeが重複レイヤーに自動付与する連番（例: `s-circle 1`, `s-circle 2`）も対象に含めます。同名ルールがSVG内の複数グループに自動適用されます。
+
 #### 検査ロジック
 
 1. **許容範囲（acceptable）以内**: 修正不要（OK）
@@ -393,7 +395,8 @@ assets/source/rules/
 | `is_drawing_element(element)` | 描画要素かどうかを判定 |
 | `analyze_svg(file_path)` | SVGを解析して統計を収集 |
 | `iter_all_groups(stats)` | 全グループを深さ優先で走査 |
-| `find_group_by_label(root, label)` | inkscape:labelでグループを検索 |
+| `find_group_by_label(root, label)` | inkscape:labelでグループを検索（最初の1件） |
+| `find_all_groups_by_label(root, label)` | inkscape:labelでグループを全件検索（Inkscape連番も含む） |
 | `get_element_label(element)` | 要素のinkscape:labelを取得 |
 | `set_element_label(element, label)` | 要素のinkscape:labelを設定 |
 | `GroupStats` | グループの統計データクラス |

@@ -750,6 +750,105 @@ class TestValidateSvg:
         assert report.total_elements == 3
 
 
+class TestValidateAndFixGroupMultiple:
+    """Tests for validate_and_fix_group with multiple groups sharing a base label."""
+
+    def _make_svg_with_duplicate_groups(self) -> ET.Element:
+        """Create SVG with two groups matching 's-circle' and 's-circle 1'."""
+        svg_ns = SVG_NAMESPACES["svg"]
+        inkscape_ns = SVG_NAMESPACES["inkscape"]
+        sodipodi_ns = "http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+
+        root = ET.Element(f"{{{svg_ns}}}svg")
+
+        for label, cx, cy in [("s-circle", "2.54", "2.54"), ("s-circle 1", "10.16", "2.54")]:
+            group = ET.SubElement(root, f"{{{svg_ns}}}g", {f"{{{inkscape_ns}}}label": label})
+            ET.SubElement(
+                group,
+                f"{{{svg_ns}}}path",
+                {
+                    "id": f"arc-{label.replace(' ', '-')}",
+                    f"{{{sodipodi_ns}}}type": "arc",
+                    f"{{{sodipodi_ns}}}cx": cx,
+                    f"{{{sodipodi_ns}}}cy": cy,
+                    f"{{{sodipodi_ns}}}rx": "0.3175",
+                    f"{{{sodipodi_ns}}}ry": "0.3175",
+                    f"{{{sodipodi_ns}}}start": "0",
+                    f"{{{sodipodi_ns}}}end": "6.2831853",
+                },
+            )
+        return root
+
+    def test_both_groups_are_validated(self):
+        root = self._make_svg_with_duplicate_groups()
+        rule = GroupRule(
+            name="s-circle",
+            shape="arc",
+            grid=GridRule(x=2.54, y=2.54),
+            size=SizeRule(width=0.635, height=0.635),
+            arc=ArcRule(start=0, end=6.2831853),
+        )
+        tolerance = ToleranceConfig()
+
+        result = validate_and_fix_group(root, rule, tolerance, fix=False)
+
+        # Both groups combined: 2 arcs total
+        assert len(result.element_results) == 2
+
+    def test_group_not_found_returns_empty(self):
+        svg_ns = SVG_NAMESPACES["svg"]
+        root = ET.Element(f"{{{svg_ns}}}svg")
+        rule = GroupRule(name="nonexistent", shape="arc", grid=GridRule(x=2.54, y=2.54))
+        tolerance = ToleranceConfig()
+
+        result = validate_and_fix_group(root, rule, tolerance)
+
+        assert len(result.element_results) == 0
+
+    def test_fix_applies_to_all_groups(self):
+        svg_ns = SVG_NAMESPACES["svg"]
+        inkscape_ns = SVG_NAMESPACES["inkscape"]
+        sodipodi_ns = "http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+
+        root = ET.Element(f"{{{svg_ns}}}svg")
+
+        # Two groups with arcs that have wrong end angle
+        for label, cx in [("s-circle", "2.54"), ("s-circle 1", "5.08")]:
+            group = ET.SubElement(root, f"{{{svg_ns}}}g", {f"{{{inkscape_ns}}}label": label})
+            ET.SubElement(
+                group,
+                f"{{{svg_ns}}}path",
+                {
+                    "id": f"arc-{label.replace(' ', '-')}",
+                    f"{{{sodipodi_ns}}}type": "arc",
+                    f"{{{sodipodi_ns}}}cx": cx,
+                    f"{{{sodipodi_ns}}}cy": "2.54",
+                    f"{{{sodipodi_ns}}}rx": "0.3175",
+                    f"{{{sodipodi_ns}}}ry": "0.3175",
+                    f"{{{sodipodi_ns}}}start": "0",
+                    f"{{{sodipodi_ns}}}end": "6.217097",  # slightly off
+                },
+            )
+
+        rule = GroupRule(
+            name="s-circle",
+            shape="arc",
+            grid=GridRule(x=2.54, y=2.54),
+            size=SizeRule(width=0.635, height=0.635),
+            arc=ArcRule(start=0, end=6.2831853),
+        )
+        tolerance = ToleranceConfig(acceptable=0.001, error_threshold=0.1)
+
+        result = validate_and_fix_group(root, rule, tolerance, fix=True)
+
+        assert len(result.element_results) == 2
+        assert result.error_count == 0
+        # All fixable issues should have been resolved
+        for elem_result in result.element_results:
+            for issue in elem_result.issues:
+                assert issue.field != "end" or issue.status == "fixable"
+
+
 class TestFormatReport:
     """Tests for format_report function."""
 

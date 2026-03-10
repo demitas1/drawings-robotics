@@ -1,5 +1,6 @@
 """Utility functions for SVG parsing and analysis."""
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterator
@@ -300,6 +301,30 @@ def find_group_by_label(root: ET.Element, label: str) -> ET.Element | None:
             if elem_label == label:
                 return elem
     return None
+
+
+def find_all_groups_by_label(root: ET.Element, label: str) -> list[ET.Element]:
+    """Find all group elements matching a label, including Inkscape duplicates.
+
+    Matches groups where inkscape:label equals label exactly, or matches
+    the Inkscape duplicate naming pattern "label N" (e.g., "s-circle 1").
+
+    Args:
+        root: Root SVG element.
+        label: inkscape:label value to search for.
+
+    Returns:
+        List of matching group elements in document order.
+    """
+    inkscape_ns = SVG_NAMESPACES["inkscape"]
+    pattern = re.compile(r"^" + re.escape(label) + r"(?: \d+)?$")
+    result = []
+    for elem in root.iter():
+        if get_local_name(elem.tag) == "g":
+            elem_label = elem.get(f"{{{inkscape_ns}}}label")
+            if elem_label and pattern.match(elem_label):
+                result.append(elem)
+    return result
 
 
 def get_element_label(element: ET.Element) -> str | None:
