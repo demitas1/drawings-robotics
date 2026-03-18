@@ -6,6 +6,11 @@
 #       --rule assets/source/rules/basic.yaml \
 #       --output assets/normalized/example-aligned.svg
 
+# Step 0: Strip - Remove reference/guide layers before processing
+strip:
+  groups:
+    - "_ref"
+
 # Step 1: Align - Validate and fix shape alignments
 align:
   groups:

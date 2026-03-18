@@ -268,7 +268,8 @@ class TestProcessSvgTree:
         rule = ProcessRule()
         report = process_svg_tree(tree, rule)
 
-        assert len(report.skipped_steps) == 3
+        assert len(report.skipped_steps) == 4
+        assert "strip (no rule)" in report.skipped_steps
         assert "align (no rule)" in report.skipped_steps
         assert "relabel (no rule)" in report.skipped_steps
         assert "add_text (no rule)" in report.skipped_steps
@@ -309,8 +310,8 @@ class TestAllSteps:
     """Tests for ALL_STEPS constant."""
 
     def test_all_steps_order(self):
-        assert ALL_STEPS == ["align", "relabel", "add_text"]
+        assert ALL_STEPS == ["strip", "align", "relabel", "add_text"]
 
     def test_all_steps_immutable(self):
         steps_copy = list(ALL_STEPS)
-        assert steps_copy == ["align", "relabel", "add_text"]
+        assert steps_copy == ["strip", "align", "relabel", "add_text"]

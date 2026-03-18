@@ -45,12 +45,13 @@ from .relabel import (
     SortConfig,
     relabel_svg_tree,
 )
+from .strip import StripReport, StripRule, _parse_strip_section, strip_svg_tree
 from .utils import register_namespaces
 
 
 # Step names
-StepName = Literal["align", "relabel", "add_text"]
-ALL_STEPS: list[StepName] = ["align", "relabel", "add_text"]
+StepName = Literal["strip", "align", "relabel", "add_text"]
+ALL_STEPS: list[StepName] = ["strip", "align", "relabel", "add_text"]
 
 
 @dataclass
@@ -60,6 +61,7 @@ class ProcessRule:
     Each section is optional. If a section is None, that step will be skipped.
     """
 
+    strip: StripRule | None = None
     align: AlignmentRule | None = None
     relabel: RelabelRule | None = None
     add_text: AddTextRule | None = None
@@ -70,6 +72,7 @@ class ProcessReport:
     """Complete processing report."""
 
     file_path: Path
+    strip_report: StripReport | None = None
     align_report: AlignmentReport | None = None
     relabel_report: RelabelReport | None = None
     add_text_report: AddTextReport | None = None
@@ -90,6 +93,8 @@ class ProcessReport:
     def executed_steps(self) -> list[str]:
         """List of steps that were executed."""
         steps = []
+        if self.strip_report is not None:
+            steps.append("strip")
         if self.align_report is not None:
             steps.append("align")
         if self.relabel_report is not None:
@@ -372,6 +377,9 @@ def parse_process_rule_file(rule_path: Path) -> ProcessRule:
 
     result = ProcessRule()
 
+    if "strip" in data:
+        result.strip = _parse_strip_section(data["strip"])
+
     if "align" in data:
         result.align = parse_align_section(data["align"])
 
@@ -405,6 +413,15 @@ def process_svg_tree(
         steps = ALL_STEPS
 
     report = ProcessReport(file_path=Path(""))
+
+    # Step 0: Strip (always applied when requested, no dry-run concept)
+    if "strip" in steps:
+        if rule.strip is not None:
+            report.strip_report = strip_svg_tree(tree, rule.strip)
+        else:
+            report.skipped_steps.append("strip (no rule)")
+    else:
+        report.skipped_steps.append("strip (not requested)")
 
     # Step 1: Align
     if "align" in steps:
@@ -486,6 +503,23 @@ def format_process_report(report: ProcessReport) -> str:
         lines.append("Skipped steps:")
         for step in report.skipped_steps:
             lines.append(f"  - {step}")
+        lines.append("")
+
+    # Strip report
+    if report.strip_report is not None:
+        lines.append("=" * 60)
+        lines.append("STRIP STEP")
+        lines.append("=" * 60)
+        lines.append(f"Total groups removed: {report.strip_report.total_removed}")
+        lines.append("")
+
+        for result in report.strip_report.group_results:
+            if result.removed_count > 0:
+                lines.append(
+                    f"  Removed: '{result.name}' ({result.removed_count} group(s))"
+                )
+            else:
+                lines.append(f"  [WARNING] Not found: '{result.name}'")
         lines.append("")
 
     # Align report
