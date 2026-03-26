@@ -10,7 +10,7 @@
    inkscape:export-filename="svg-test1.png"
    inkscape:export-xdpi="300"
    inkscape:export-ydpi="300"
-   inkscape:version="1.4.2 (ebf0e94, 2025-05-08)"
+   inkscape:version="1.4.3 (0d15f75, 2025-12-25)"
    sodipodi:docname="svg-test1-breadboard1.svg"
    xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
    xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
@@ -27,15 +27,15 @@
      inkscape:deskcolor="#505050"
      inkscape:document-units="mm"
      showgrid="true"
-     inkscape:zoom="8.0000003"
-     inkscape:cx="166.74999"
-     inkscape:cy="92.812497"
+     inkscape:zoom="4.0000002"
+     inkscape:cx="111.75"
+     inkscape:cy="118.625"
      inkscape:window-width="3776"
      inkscape:window-height="2070"
      inkscape:window-x="0"
      inkscape:window-y="42"
      inkscape:window-maximized="1"
-     inkscape:current-layer="layer6"
+     inkscape:current-layer="layer1"
      showguides="false">
     <inkscape:grid
        id="grid1"
@@ -56,7 +56,6 @@
      id="defs1" />
   <g
      inkscape:label="Layer 1"
-     inkscape:groupmode="layer"
      id="layer1">
     <g
        inkscape:groupmode="layer"
@@ -77,7 +76,7 @@
        inkscape:label="marking">
       <path
          style="fill:#ff0000;fill-opacity:1;stroke:#ff0000;stroke-width:0.4;stroke-linejoin:round;stroke-miterlimit:3;stroke-dasharray:none;stroke-opacity:1;paint-order:markers stroke fill"
-         d="m 5.08,50.799998 34.29,0"
+         d="M 5.08,50.799998 H 39.37"
          id="path22"
          sodipodi:nodetypes="cc" />
       <path
@@ -87,7 +86,7 @@
          sodipodi:nodetypes="cc" />
       <path
          style="fill:#ff0000;fill-opacity:1;stroke:#ff0000;stroke-width:0.4;stroke-linejoin:round;stroke-miterlimit:3;stroke-dasharray:none;stroke-opacity:1;paint-order:markers stroke fill"
-         d="m 45.72,50.799998 34.290001,0"
+         d="M 45.72,50.799998 H 80.010001"
          id="path23"
          sodipodi:nodetypes="cc" />
     </g>
